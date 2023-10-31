@@ -22,7 +22,7 @@ continue;
 ```
 
 Now that we have made sense of the first 4 bytes which was prepended to the ethernet frame by the kernel, we are left with the main TCP data and we need to make sense of it. Since our main concern is implementing the protocol, we shall once again recruit a crate to help parse the IP packet and TCP information. Although we will be using a crate to do the parsing, It is important to still understand what is happening. We are essentially going to be encoding the IPV4 header in our code 
-[LINK TO IMAGE OF IPV4 HEADER - https://en.wikipedia.org/wiki/Internet_Protocol_version_4]
+<img width="951" alt="Screenshot 2023-10-31 at 16 49 50" src="https://github.com/Ghvstcode/Rust-Tcp/assets/46195831/8eaf421d-603e-4c19-a033-20020085f2c5">
 
 Once we decode the IP packet we will be able to get some important information like the Destination Address, The soucre address and the protocol. 
 The crate we shall be using for parsing the IP Packet header is etherparse. To add it to your project add the the following to your cargo.toml

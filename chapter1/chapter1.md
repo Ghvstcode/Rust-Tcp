@@ -1,3 +1,4 @@
+## The Kernel-User Space Divide
 The task of building our own TCP stack presents a unique set of challenges. Normally, when our user-space applications require internet connectivity, they make calls to high-level APIs provided by the operating system's kernel. These APIs facilitate the creation, sending, and receiving of data over network connections, abstracting away the complexities of raw packet handling. It's a fantastic arrangement for developing standard applications.
 
 However, things get tricky when you're aiming to construct a custom TCP stack. With your own custom TCP stack, you're not just a consumer of network services; you have to be the manager, the processor, and the dispatcher. That means you need to interact directly with raw network packets, process them, and then send them off to their respective destinations. In essence, you'll have to bypass the operating system's built-in TCP stack to directly receive and process raw packets from the internet within your user-space TCP stack.
@@ -8,7 +9,9 @@ At its core - a TUN device is a a [virtual] software-based network interface tha
 
 Once we've got our TUN device up and running, any packet aimed at its associated IP address will be redirected by the kernel—no questions asked, no packet processed—straight into the lap of the user-space application that has bound itself to theTUN device. This setup gives us the carte blanche we need to fiddle with raw packets to our heart's content.
 
-Packet Handling Workflow: TUN Device vs Standard Network Stack
+### Packet Handling Workflow: TUN Device vs Standard Network Stack
+
+
 | Step  | With TUN Device                          | Without TUN Device                     |
 |-------|------------------------------------------|----------------------------------------|
 | 1     | Packet arrives at physical NIC.          | Packet arrives at physical NIC.        |
@@ -91,6 +94,7 @@ You will notice that our application receives some raw bytes of date. Something 
 
 
 **Aside** 
+
 For efficiency, we can script the entire process:
 ```
 #!/bin/bash
@@ -103,3 +107,6 @@ trap "kill $pid" INT TERM
 wait $pid
 
 ```
+
+### References
+[TODO]

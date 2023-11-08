@@ -183,6 +183,28 @@ fn is_between_wrapped(start: u32, x: u32, end: u32) -> bool {
     wrapping_lt(start, x) && wrapping_lt(x, end)
 }
 
-```
+```Rust
+    fn send_rst(&mut self, nic: &mut tun_tap::Iface) -> io::Result<()> {
+        self.tcp.rst = true;
+        // TODO: fix sequence numbers here
+        // If the incoming segment has an ACK field, the reset takes its
+        // sequence number from the ACK field of the segment, otherwise the
+        // reset has sequence number zero and the ACK field is set to the sum
+        // of the sequence number and segment length of the incoming segment.
+        // The connection remains in the same state.
+        //
+        // TODO: handle synchronized RST
+        // 3.  If the connection is in a synchronized state (ESTABLISHED,
+        // FIN-WAIT-1, FIN-WAIT-2, CLOSE-WAIT, CLOSING, LAST-ACK, TIME-WAIT),
+        // any unacceptable segment (out of window sequence number or
+        // unacceptible acknowledgment number) must elicit only an empty
+        // acknowledgment segment containing the current send-sequence number
+        // and an acknowledgment indicating the next sequence number expected
+        // to be received, and the connection remains in the same state.
+        self.tcp.sequence_number = 0;
+        self.tcp.acknowledgment_number = 0;
+        self.write(nic, self.send.nxt, 0)?;
+        Ok(())
+    }
 
 TODO - CONCLUDE THIS CHAPTER, SHOW THE RESULTS OF RUNNING THIS CODE

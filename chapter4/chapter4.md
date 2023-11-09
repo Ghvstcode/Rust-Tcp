@@ -2,6 +2,153 @@
 Moving on to the `on_packet` method, we step into a crucial juncture in the TCP three-way handshake. After sending a SYN-ACK, the server engages this method as it awaits the client's ACK. This acknowledgment propels the connection from the "SYN-RECEIVED" state into the "ESTABLISHED" one, cementing the handshake and formally opening the communication channel. The `on_packet` method does the heavy lifting of finalizing the three-way handshake
 It checks for the ACK response from the client. If the ACK is correctly received, the method will shift the connection's status to "ESTABLISHED," signifying that the TCP connection is complete and data transfer can begin.
 
+Before we continue with our implementation, we should add a helper method "write" that will be used by both the `on_accept` and `on_packet` connection methods. This method will abstract away the complexity of constructing and sending TCP segments by consolidating common tasks performed by the `on_accept` and `on_packet` connection methods into one place.
+
+Within the `write` method, the sequence and acknowledgment numbers are first set to the appropriate values for the outgoing packet.
+* The acknowledgment number is configured to `self.recv.nxt`, reflecting the receiver's next expected byte. The acknowledgment number is crucial for the proper sequencing of the data, as it indicates the successful receipt of all data up to this point and what the connection is prepared to receive next. This accounting starts from the initial receive sequence number (IRS), combined with the number of bytes received so far.
+* The sequence number for the packet to be sent is passed into the function and updated to the `self.tcp.sequence_number` field, ensuring that the TCP segment carries the correct sequence information. The `write` method also determines the maximum amount of data it can send in a single segment, which as discussed earlier is referred to as the limit within the function.
+* Subsequent to the initial sequence setting, the method proceeds to prepare the outgoing TCP segment. The segment's data payload is derived from the `self.unacked` queue, which contains the data bytes that have been sent but not yet acknowledged. We are yet to discuss the unacked queue - so for now I will skip the explanation of this and revist it later on when we are talking about Data transmission.
+* The write method, after assembling the payload data then proceeds to write the IP header into `buf`, updating the payload length field to include the actual size of the TCP payload. It deliberately leaves space for the TCP header, which will be filled in after the payload is written because the TCP checksum calculation requires the complete segment, including both headers and payload.
+* After writing the payload, the TCP checksum is calculated over the entire segment, including the pseudo-header, TCP header, and payload, for error-checking. Once the checksum is computed, the TCP header is written into the reserved space in `buf`. The transmission control flags, like `SYN` and `FIN`, also influence the sequence space. If either flag is set, `write` method increments the sequence number since these flags consume a sequence number in the handshake or termination process.
+* As it finishes constructing the packet, the method updates various state variables such as `next_seq`, which tracks the next sequence number expected by the sender after accounting for any transmitted data and control flags. It then logs the current time against the sequence number in `self.timers.send_times` (will visit later) for later use in estimating the round-trip time (RTT) and managing retransmissions.
+
+```Rust
+// tcp.rust
+// Define the 'write' method for the 'Connection' struct.
+fn write(&mut self, nic: &mut tun_tap::Iface, seq: u32, mut limit: usize) -> io::Result<usize> {
+    // Allocate a local buffer for creating the TCP segment.
+    // The size is set to 1500 bytes, which is the standard maximum transmission unit (MTU) for Ethernet.
+    let mut buf = [0u8; 1500];
+
+    // The sequence number for the outgoing packet is determined by the caller.
+    // This is the number that keeps track of the position of the first byte in the current message 
+    // within the entire sequence of sent bytes.
+    self.tcp.sequence_number = seq;
+
+    // The acknowledgment number is what our side expects to receive next from the other side. 
+    // It is calculated as the sum of the initial received sequence number (irs) and the number of bytes received so far.
+    self.tcp.acknowledgment_number = self.recv.nxt; 
+
+    // Ensure we don't send more data than we are allowed, which includes respecting the send window limit, 
+    // which is the amount of data we can send before needing an acknowledgment, and accounting for any SYN/FIN flags 
+    // which also consume sequence space despite not being part of the window.
+
+    // Print out information to help with debugging the connection status.
+    // The difference between 'self.recv.nxt' and 'self.recv.irs' gives the number of bytes we have acknowledged.
+    // 'seq' shows the starting sequence number for this segment.
+    // 'limit' is the maximum amount of data we can send in this packet.
+    println!(
+        "write(ack: {}, seq: {}, limit: {}) syn {:?} fin {:?}",
+        self.recv.nxt - self.recv.irs,
+        seq,
+        limit,
+        self.tcp.syn,
+        self.tcp.fin,
+    );
+
+    // Determine the starting point for data to write in the current TCP stream.
+    // 'wrapping_sub' is used to safely calculate differences of sequence numbers considering they might wrap around.
+    // Sequence numbers in TCP are 32-bit unsigned numbers and wrap back to 0 after 2^32 - 1.
+    let mut offset = seq.wrapping_sub(self.send.una) as usize;
+
+    // If the connection is closing, ensure no more data is sent after FIN.
+    if let Some(closed_at) = self.closed_at {
+        if seq == closed_at.wrapping_add(1) {
+            // After sending a FIN, reset the offset and limit to prevent further data transmission.
+            offset = 0;
+            limit = 0;
+        }
+    }
+
+    // Print the calculated offset for debugging.
+    println!("using offset {} base {} in {:?}", offset, self.send.una, self.unacked.as_slices());
+
+    // Split the unsent data into two slices - 'h' as the head and 't' as the tail of the unsent data.
+    // The split is based on the current 'offset' from where we need to start sending data.
+    let (mut h, mut t) = self.unacked.as_slices();
+    if h.len() > offset {
+        // If 'h' is longer than 'offset', we truncate 'h' to start from 'offset'.
+        h = &h[offset..];
+    } else {
+        // If 'h' is shorter, we skip 'h' completely and adjust 't' accordingly.
+        let skipped = h.len();
+        h = &[]; // 'h' is now empty, as it's been fully sent.
+        t = &t[(offset - skipped)..]; // 't' is adjusted to remove the already sent portion.
+    }
+
+    // Calculate how much data can be sent by choosing the smaller of 'limit' or available data.
+    let max_data = std::cmp::min(limit, h.len() + t.len());
+    let size = std::cmp::min(
+        // Limit the size to prevent buffer overflow.
+        buf.len(),
+        // Include only as much data as the MTU allows after accounting for IP and TCP header sizes.
+        self.tcp.header_len() as usize + self.ip.header_len() as usize + max_data,
+    );
+
+    // Set the IP packet's payload length to the TCP segment size.
+    self.ip.set_payload_len(size - self.ip.header_len() as usize);
+
+    // Start writing the packet with the IP header first.
+    // 'Write' is a trait in Rust that allows writing bytes to a buffer. Here we use it to write the IP header.
+    use std::io::Write;
+    let buf_len = buf.len();
+    let mut unwritten = &mut buf[..]; // Borrow the entire buffer as mutable to start writing the IP header.
+
+    self.ip.write(&mut unwritten); // Writing the IP header into the buffer.
+    // Calculate the point in the buffer where the IP header ends based on how much was written.
+    let ip_header_ends_at = buf_len - unwritten.len();
+
+    // Leave space for the TCP header by skipping over the region where it will be written.
+    // This is done to come back later and fill it in once we know the payload and can compute the checksum.
+    unwritten = &mut unwritten[self.tcp.header_len() as usize..];
+    let tcp_header_ends_at = buf_len - unwritten.len(); // Identify where the TCP header will be written.
+
+    // Now write the TCP payload to the buffer by first writing the head slice 'h' and then the tail 't'.
+    let payload_bytes = {
+        let mut written = 0; // This will track how many bytes we've successfully written.
+        let mut limit = max_data; // The adjusted payload size after accounting for the TCP header space.
+
+        // Write the first part of the payload ('h') until we hit the limit or run out of 'h'.
+        let p1l = std::cmp::min(limit, h.len()); // 'p1l' is how much we can write from 'h'.
+        written += unwritten.write(&h[..p1l])?; // Write and update 'written' with bytes written.
+        limit -= written; // Reduce the limit by what's been written so far.
+
+        // Continue with 't', writing as much as we can after 'h' has been accounted for.
+        let p2l = std::cmp::min(limit, t.len()); // 'p2l' is how much we can write from 't'.
+        written += unwritten.write(&t[..p2l])?; // Write 't' to the buffer and update the count.
+        written // Return total written payload size.
+    };
+
+    // Calculate the end of the payload to know where to stop writing to the buffer.
+    let payload_ends_at = buf_len - unwritten.len();
+
+    // Compute the TCP checksum which ensures data integrity over the network.
+    // The checksum needs the IP header and the payload to be calculated correctly.
+    self.tcp.checksum = self
+        .tcp
+        .calc_checksum_ipv4(&self.ip, &buf[tcp_header_ends_at..payload_ends_at])
+        .expect("failed to compute checksum");
+
+    // Write the TCP header after the checksum calculation as it's now complete with all required information.
+    let mut unwritten = &mut buf[ip_header_ends_at..]; // Update the unwritten reference to start at the end of the IP header.
+    self.tcp.write(&mut unwritten); // Write the TCP header into the designated space in the buffer.
+
+    // After filling the buffer with the IP header, TCP header, and payload, we send it via the 'nic' interface.
+    let write_len = nic.send(&buf[..payload_ends_at])?;
+
+    // The 'send' method on 'nic' returns the number of bytes written to the network interface, 
+    // which should match the amount of data we wanted to send (from IP header start to the end of the payload).
+    // This count is important for tracking successful data transmission.
+
+    // Return the size of the payload actually written as the result of this method.
+    Ok(payload_bytes)
+}
+
+```
+
+With the write method in place we can go ahead and replace the logic of writing to buffer with a single call to the write function like this `c.write(nic, c.send.nxt, 0)?;`
+
+
 ### Sequence Number Validation
 The first thing the `on_packet` method does is sequence number validation, the `on_packet` method treats the [sequence] numbers as positions on a circle defined by the TCP sequence space. To avoid the complications that would arise from number overflow, we use Rust’s `wrapping_add` function, allowing the sequence to gracefully roll over to 0 after hitting the 32-bit integer ceiling. This mechanism is much like an odometer rolling over after reaching its maximum display limit, ensuring mileage tracking continues smoothly without glitch.
 

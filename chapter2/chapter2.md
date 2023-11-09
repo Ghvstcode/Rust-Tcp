@@ -74,4 +74,5 @@ match etherparse::Ipv4HeaderSlice::from_slice(&buf[4..nbytes]) {
 
 ```
 On running the code above & using a TCP client to ping our application, `nc 192.168.0.2 80`  you should see the TCP packets being received alongside the destination address, the source address, and the protocol.
-like this [TODO]
+### References
+- [Corresponding Code](https://github.com/jonhoo/rust-tcp/commit/b7c28eecf7c7f20a38a1e0d48f91fc2b703b0d47#diff-42cb6807ad74b3e201c5a7ca98b911c5fa08380e942be6e4ac5807f8377f87fc)

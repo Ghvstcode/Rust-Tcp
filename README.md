@@ -68,3 +68,5 @@ This book, "Implementing TCP in Rust," is licensed under the Creative Commons At
 * [RFC 793](https://www.rfc-editor.org/rfc/rfc793)
 * [TapIP Network Topology](https://github.com/chobits/tapip/blob/master/doc/net_topology)
 * [Sami's TCP/IP stack written in C](https://github.com/saminiir/level-ip)
+* ChatGPT
+

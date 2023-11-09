@@ -1,4 +1,4 @@
-### The connection Quad
+### The Connection Quad
 
 We have made quite some progress in our project - setting us up to easily tackle the TCP protocol implementation. We are going to be discussing some of the behaviors of TCP & its various states. 
 
@@ -516,6 +516,8 @@ At this point, you are probably curious and see the long lines of code we have w
 5   0.006999   fe80::a2b3:c4d5:e6f7 -> fe80::1:1   TCP 66 51234->80 [ACK] Seq=1 Ack=1 Win=43000 Len=0
 
 ```
-If everything goes well you should see sth similar to what we see above. This shows that our host first asks for router information, and then gets a reply from a router. After that, we see the steps of a TCP connection being made.
+If everything goes well you should see sth similar to what we see above. This shows that our host first asks for router information, and gets a reply from a router. After that, we see the steps of a TCP connection being made.
 
 What's next on our agenda? If you have been paying attention, you'll notice we've tackled the initial two steps of the TCP three-way handshake. When a SYN from the client comes our way, our server promptly shoots back with a SYN-ACK. After dispatching that SYN-ACK, the server gracefully steps into the `SynRcvd` state, poised and ready for the client's ACK to seal the handshake deal. The moment we capture and process this ACK, we'd ideally transition our connection into the `Established` state, signaling the birth of a full-fledged TCP connection. However, there's a piece of the puzzle missing here: our code is still in the waiting room, yet to handle the client's ACK. And that, my friends, is our next port of call.
+### References
+- [Corresponding Code](https://github.com/jonhoo/rust-tcp/commit/b7c28eecf7c7f20a38a1e0d48f91fc2b703b0d47#diff-42cb6807ad74b3e201c5a7ca98b911c5fa08380e942be6e4ac5807f8377f87fc)

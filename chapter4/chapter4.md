@@ -329,6 +329,7 @@ fn wrapping_lt(lhs: u32, rhs: u32) -> bool {
 fn is_between_wrapped(start: u32, x: u32, end: u32) -> bool {
     wrapping_lt(start, x) && wrapping_lt(x, end)
 }
+```
 
 ```Rust
     fn send_rst(&mut self, nic: &mut tun_tap::Iface) -> io::Result<()> {
@@ -353,5 +354,10 @@ fn is_between_wrapped(start: u32, x: u32, end: u32) -> bool {
         self.write(nic, self.send.nxt, 0)?;
         Ok(())
     }
+```
 
 TODO - CONCLUDE THIS CHAPTER, SHOW THE RESULTS OF RUNNING THIS CODE
+
+### References
+- [Corresponding Code](https://github.com/jonhoo/rust-tcp/commit/fa1665f4141e205cde056d5eaa872933169e2fac)
+

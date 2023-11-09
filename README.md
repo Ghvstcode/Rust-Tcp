@@ -1,18 +1,18 @@
-## Implementing TCP  in Rust
+## Implementing TCP  In Rust
 Welcome to Implementing TCP in Rust. This is a book with blogpost sized chapters walking you through implementing TCP in Rust. I've been into Rust for a bit, read some books, but nothing beats a real project to make it all click. I was on the lookout for a solid project to sink my teeth into and really get Rust into my fingers. I discovered [Jon Gjengset's](https://www.youtube.com/@jonhoo) epic live stream of building a TCP stack in Rust. Watching him work through the process was a game-changer for me, and honestly, this book wouldn't have happened without his streams as a starting point.
 
-At first, this book was just a set of notes for me to refer back to. But then it hit me – why not flesh these notes out into something more substantial? Jon's streams are gold - they're incredibly in-depth and he explains his every move and decision for hours(The three videos on TCP were for about 14 hours). But I get it, not everyone can or wants to commit to that length of video content.
+At first, this book was just a set of notes for me to refer back to. But then it hit me – why not flesh these notes out into something more substantial? Jon's streams are gold - they're incredibly in-depth and he explains his every move and thought for hours(The three videos on TCP were for about 14 hours). But I get it, not everyone can or wants to commit to that length of video content.
 
-So here's what I've got: a book inspired by Jon's marathon sessions, condensed into a more manageable format for the rest of us. It's for anyone who prefers reading and doing over watching.
+So here's what I've got: a book inspired by Jon's marathon sessions, condensed into a compact format for the rest of us. It's for anyone who prefers reading and doing over watching.
 
-### What are we building
+### What Are We Building?
 In this book, we embark on a  journey to build a user space TCP stack in Rust, grounded in the specifications of [RFC 793](https://www.rfc-editor.org/rfc/rfc793). The TCP stack is an implementation that lives entirely in user space, as opposed to being part of the operating system kernel. This choice offers us an opportunity to understand and tinker with network programming without delving into kernel development.
 
 Transmission Control Protocol (TCP) is a fundamental protocol that forms the backbone of the internet. It is what allows us to send and receive data with the assurance of reliability and order. Without TCP, the internet as we know it—complete with the seamless sending of emails, files, and the browsing of websites—would be untenable. TCP guarantees that packets of data arrive at their destination correctly and in the same order they were sent, providing essential services such as data sequencing, error detection, and correction through retransmissions.
 
 I encourage you to read [RFC 793](https://www.rfc-editor.org/rfc/rfc793). It is very straightforward and most of what we will be discussing in the coming chapters is based off it.
 
-### How to read this book
+### How To Read This book
 This is the order in which to read this book: 
 * [Chapter 1 - The Kernel-User Space Divide](https://github.com/Ghvstcode/Rust-Tcp/blob/main/chapter1/chapter1.md#the-kernel-user-space-divide)
 * [Chapter 2 - Parsing The Bits](https://github.com/Ghvstcode/Rust-Tcp/blob/main/chapter2/chapter2.md#parsing-the-bits)
@@ -24,13 +24,13 @@ I have deliberately not included complete code samples within the book, to nudge
 
 By the end of this book, you will have a working TCP stack that you can use to understand and explore the lower levels of network programming. You will gain practical knowledge in Rust and a deeper appreciation for the protocols that power the internet. This book will serve not only as a guide to implementing RFC 793 but also as a testament to the power and capabilities of Rust in systems programming.
 
-### Contributing to This Book
+### Contributing To This Book
 
 I welcome any and all contributions to make 'Implementing TCP in Rust' a better resource for everyone who comes after you. If you spot an error, have a suggestion, or want to contribute in any other way, please don't hesitate to reach out. Your feedback is invaluable, whether it's a typo, a technical clarification, or a new perspective on how to tackle a problem.
 
 I do not claim to be the ultimate authority on Rust or TCP implementation; I'm learning right along with you. This book is a shared journey, and every reader's experiences can help improve it for future readers. So if you have a correction, a better way to explain a concept, or any other input, I'm all ears.
 
-### Here's how you can contribute:
+### Here's How You Can Contribute:
 
 - **Suggestions and Corrections:** If you have suggestions for improvements or find any mistakes, please feel free to submit them as an issue or pull request to the repository.
     

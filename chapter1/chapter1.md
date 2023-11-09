@@ -109,4 +109,5 @@ wait $pid
 ```
 
 ### References
-[TODO]
+- [Virtual networking 101: Bridging the gap to understanding TAP](https://blog.cloudflare.com/virtual-networking-101-understanding-tap/)
+- [Corresponding Code](https://github.com/jonhoo/rust-tcp/commit/b7c28eecf7c7f20a38a1e0d48f91fc2b703b0d47#diff-42cb6807ad74b3e201c5a7ca98b911c5fa08380e942be6e4ac5807f8377f87fc)

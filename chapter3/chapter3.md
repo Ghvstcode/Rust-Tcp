@@ -1,29 +1,76 @@
 ### The connection Quad
 
-We have made quite some progress in our project - setting us up to easily tackle the TCP protocol implementation. We are going to be discussing some of the behaviours of TCP & its various states. 
+We have made quite some progress in our project - setting us up to easily tackle the TCP protocol implementation. We are going to be discussing some of the behaviors of TCP & its various states. 
 
-In a multitasking OS, various applications—like web servers, email clients, and more—need simultaneous network access. To distinguish between these different network activities, each application binds itself to a unique port number. A combination of this port number, along with the host's IP address, forms(at a very basic level) what is known as a "socket" - a kernel managed abstraction. To establish a connection, a pair of these sockets is used—one for the sending machine and one for the receiving machine. A socket pair is unique and effectively identifies a connection.
+In a multitasking OS, various applications—like web servers, email clients, and more—need simultaneous network access. To distinguish between these different network activities, each application binds itself to a unique port number. A combination of this port number, along with the host's IP address, forms(at a very basic level) what is known as a "socket" - a kernel-managed abstraction. To establish a connection, a pair of these sockets is used—one for the sending machine and one for the receiving machine. A socket pair is unique and effectively identifies a connection.
 
--
+-- <br>
 A very important data structure associated with TCP connection endpoints Transmission Control Blocks (TCBs). TCBs serve as the central repository for all the parameters and variables that pertain to an established or pending connection. Containing everything from socket addresses and port numbers to sequence numbers and window sizes, the TCB is the cornerstone of TCP's operational logic.
 
-Each TCB is an encapsulation of the TCP state for a particular connection. It stores details that are essential for the "reliable" in "Transmission Control Protocol," such as unacknowledged data, flow control parameters, and the next expected sequence number. In essence, the TCB functions as the control center for TCP operations, maintaining and updating the state of the connection in real-time. The TCB serves as the kernel's ledger for a TCP connection, storing everything from port numbers and IP addresses to flow control parameters and pending data. Essentially, the TCB is the repository for all the metrics and variables that a TCP stack needs to maintain to handle a connection reliably and effectively.
+Each TCB is an encapsulation of the TCP state for a particular connection. It stores details that are essential for the "reliability" in "Transmission Control Protocol," such as unacknowledged data, flow control parameters, and the next expected sequence number. In essence, the TCB functions as the control center for TCP operations, maintaining and updating the state of the connection in real time. The TCB serves as the kernel's ledger for a TCP connection, storing everything from port numbers and IP addresses to flow control parameters and pending data. Essentially, the TCB is the repository for all the metrics and variables that a TCP stack needs to maintain to handle a connection reliably and effectively.
 
--
+-- <br>
 Now, consider a machine involved in multiple TCP connections. How does it differentiate between them & discern which incoming packet belongs to which connection? This is where the concept of the 'connection quad' becomes crucial. A connection quad consists of a tuple with four elements: source IP address, source port, destination IP address, and destination port. This tuple serves as a unique identifier for each active TCP connection. The brilliance of the connection quad lies in its utility as a unique key for indexing the hash table of TCBs. When a packet arrives, the TCP stack uses the connection quad to look up the corresponding TCB and, by extension, the relevant state machine. This ensures that the packet is processed according to the correct set of rules and variables, as defined by the state machine encapsulated in that TCB. TCP creates and maintains a hash table of transmission control blocks (TCBs) to store data for each TCP connection. A control block is attached to the table for each active connection. The control block is deleted shortly after the connection is closed.
 
--
+-- <br>
 A connection progresses through a series of states during its lifetime.  The states are:  LISTEN, SYN-SENT, SYN-RECEIVED, ESTABLISHED, FIN-WAIT-1, FIN-WAIT-2, CLOSE-WAIT, CLOSING, LAST-ACK, TIME-WAIT, and the fictional state CLOSED.  These states, embedded in the Transmission Control Block (TCB), serve as critical markers that guide the connection's behavior at each juncture. From the initial handshake to data transfer and eventual teardown, the state of a connection is meticulously tracked to facilitate reliable and ordered data exchange.
 
 The initial states—`CLOSED` and `LISTEN`—serve as the connection's genesis points. When in the `CLOSED` state, no Transmission Control Block (TCB) exists, essentially making the connection non-existent. It's akin to an uninitialized variable; any packets received for this state are disregarded. Contrast this with the `LISTEN` state, where the system is actively waiting for incoming connection requests. Once a `SYN` packet is received, the state transitions to `SYN-RECEIVED`, initiating the TCP handshake. The connection reaches a steady `ESTABLISHED` state post-handshake, where most of the data exchange occurs.
 
 As the connection concludes, it cascades through a series of `FIN-WAIT` and `CLOSE-WAIT` states, ultimately reaching `TIME-WAIT` or `LAST-ACK` depending on the teardown initiation. These terminal states ensure that any lingering packets in the network are accounted for, providing a graceful connection teardown. The system finally reverts to the `CLOSED` state, freeing the TCB and associated resources for future connections.
 
-[IMAGE OF TCP DATA STATE - SEARCH RFC FOR 'ESTAB']
-Enough of the talk, Lets write some code! 
-To get started we are going to encode the state diagram using an Enum. To make things more modular we can create a new module called TCP and house some code in TCP.rs. The Enum & other logic related to the TCP state machine  will live there. 
+```
+                    +---------+ ---------\      active OPEN
+                              |  CLOSED |            \    -----------
+                              +---------+<---------\   \   create TCB
+                                |     ^              \   \  snd SYN
+                   passive OPEN |     |   CLOSE        \   \
+                   ------------ |     | ----------       \   \
+                    create TCB  |     | delete TCB         \   \
+                                V     |                      \   \
+                              +---------+            CLOSE    |    \
+                              |  LISTEN |          ---------- |     |
+                              +---------+          delete TCB |     |
+                   rcv SYN      |     |     SEND              |     |
+                  -----------   |     |    -------            |     V
+ +---------+      snd SYN,ACK  /       \   snd SYN          +---------+
+ |         |<-----------------           ------------------>|         |
+ |   SYN   |                    rcv SYN                     |   SYN   |
+ |   RCVD  |<-----------------------------------------------|   SENT  |
+ |         |                    snd ACK                     |         |
+ |         |------------------           -------------------|         |
+ +---------+   rcv ACK of SYN  \       /  rcv SYN,ACK       +---------+
+   |           --------------   |     |   -----------
+   |                  x         |     |     snd ACK
+   |                            V     V
+   |  CLOSE                   +---------+
+   | -------                  |  ESTAB  |
+   | snd FIN                  +---------+
+   |                   CLOSE    |     |    rcv FIN
+   V                  -------   |     |    -------
+ +---------+          snd FIN  /       \   snd ACK          +---------+
+ |  FIN    |<-----------------           ------------------>|  CLOSE  |
+ | WAIT-1  |------------------                              |   WAIT  |
+ +---------+          rcv FIN  \                            +---------+
+   | rcv ACK of FIN   -------   |                            CLOSE  |
+   | --------------   snd ACK   |                           ------- |
+   V        x                   V                           snd FIN V
+ +---------+                  +---------+                   +---------+
+ |FINWAIT-2|                  | CLOSING |                   | LAST-ACK|
+ +---------+                  +---------+                   +---------+
+   |                rcv ACK of FIN |                 rcv ACK of FIN |
+   |  rcv FIN       -------------- |    Timeout=2MSL -------------- |
+   |  -------              x       V    ------------        x       V
+    \ snd ACK                 +---------+delete TCB         +---------+
+     ------------------------>|TIME WAIT|------------------>| CLOSED  |
+                              +---------+                   +---------+
+```
+TCP Connection State Diagram Figure 6. As seen in RFC 793. 
+
+Enough of the talk, Let's write some code! 
+To get started we are going to encode the state diagram using an Enum. To make things more modular we can create a new module called TCP and house some code in `TCP.rs`. The Enum & other logic related to the TCP state machine  will live there. 
 ```Rust
-tcp.rs
+// tcp.rs
 // Defining possible TCP states. 
 // Each state represents a specific stage in the TCP connection.
 pub enum State { 
@@ -68,7 +115,7 @@ pub fn on_packet<'a>(
 ```
 
 ```Rust
-main.rs
+//main.rs
 // Importing necessary modules and packages.
 use std::io;
 use std::collections::HashMap;
@@ -110,18 +157,18 @@ fn main() -> io::Result<()> {
                         
                         // Look for or create a new entry in the HashMap for this connection.
   
-// Check if the connection already exists in the HashMap, otherwise create a new entry 
-match connections.entry(Quad { 
-src: (src, tcph.source_port()), 
-dst: (dst, tcph.destination_port()), 
-}) { 
-Entry::Occupied(mut c) => { 
-c.get_mut().on_packet(&mut nic, iph, tcph, &buf[datai..nbytes])?; 
-} 
-Entry::Vacant(e) => { 
-if let Some(c) = tcp::Connection::on_accept(&mut nic, iph, tcph, &buf[datai..nbytes])? { 
-e.insert(c); 
-} } } }
+			// Check if the connection already exists in the HashMap, otherwise create a new entry 
+			match connections.entry(Quad { 
+			src: (src, tcph.source_port()), 
+			dst: (dst, tcph.destination_port()), 
+			}) { 
+			Entry::Occupied(mut c) => { 
+			c.get_mut().on_packet(&mut nic, iph, tcph, &buf[datai..nbytes])?; 
+			} 
+			Entry::Vacant(e) => { 
+			if let Some(c) = tcp::Connection::on_accept(&mut nic, iph, tcph, &buf[datai..nbytes])? { 
+			e.insert(c); 
+			} } } }
                     }
                     Err(e) => {
                         // Handle TCP header parsing errors.
@@ -144,9 +191,8 @@ In the code, we establish the foundation of our TCP stack by defining the key da
 We introduce two primary methods for packet handling: `on_accept` and `on_packet`. The `on_accept` method is responsible for handling incoming packets that initiate new connections. Conversely, the `on_packet` method manages packets for existing connections. Both methods log essential information such as source and destination IP addresses and ports, as well as the payload length. Finally, in `main.rs`, we make use of pattern matching to differentiate between new and existing connections, based on the incoming packets.
 
 We're making steady progress. Thus far, we've ensured that we're receiving the correct IPv4 packets, and we've implemented a mechanism to associate incoming packets with their respective states, keyed by a unique connection quad. Our next objective is to focus on implementing TCP handshakes, a critical step for facilitating a dependable connection between a client and a server. The client initiates this process by sending a SYN (Synchronize) packet, while the server listens for these incoming requests. This handshake is a three-stage procedure involving a SYN packet, followed by a SYN-ACK (Synchronize-Acknowledgment) packet, and concluding with an ACK (Acknowledgment) packet. During this phase, we'll enhance the `accept` method to manage these distinct types of handshake packets.
-```
-CODE BLOCK
-
+```Rust
+// main.rs
 // Required imports
 use std::io;
 mod tcp;  // Importing the tcp module (defined below)
@@ -229,8 +275,8 @@ fn main() -> io::Result<()> {
 
 ```
 
-```
-tcp.rs
+```Rust
+//tcp.rs
 use std::io;
 use std::io::prelude::*;
 
@@ -240,11 +286,8 @@ pub enum State {
     Closed,
     Listen,
     SynRcvd,
-    //Estab,
+    Estab,
 }
-
-// TODO: It seems like more states might be added in the future based on the commented-out line.
-// Consider extending this to cover all states.
 
 pub struct Connection {
     /// The current state of the TCP connection.
@@ -400,7 +443,7 @@ impl Connection {
         c.ip.set_payload_len(c.tcp.header_len() as usize + 0);
 
         // Calculate and set the checksum for the SYN-ACK packet.
-        syn_ack.checksum = syn_ack
+        c.tcp.checksum = c.tcp
             .calc_checksum_ipv4(&c.ip, &[])
             .expect("Failed to compute checksum");
         
@@ -442,7 +485,7 @@ impl Connection {
 ```
 
   
-In transitioning from the code containing the skeleton of our implementation to the fleshed out version where we establish a TCP handshake, we've undergone a significant architectural evolution. Central to this architecture is the extension of the `State` enum and the `Connection` struct in `tcp.rs`. Previously, our `State` enum was a simple representation of four possible TCP states. In the new implementation, the focus shifts to establishing a more robust representation of connection states. The `Connection` struct has been extended to now hold instances of `SendSequenceSpace` and `RecvSequenceSpace` as its attributes. These structs are instrumental in the bookkeeping of TCP's sequence and acknowledgment numbers, which are paramount for the reliable delivery of data. Let's delve into the specifics.
+In transitioning from the code containing the skeleton of our implementation to the fleshed-out version where we establish a TCP handshake, we've undergone a significant architectural evolution. Central to this architecture is the extension of the `State` enum and the `Connection` struct in `tcp.rs`. Previously, our `State` enum was a simple representation of four possible TCP states. In the new implementation, the focus shifts to establishing a more robust representation of connection states. The `Connection` struct has been extended to now hold instances of `SendSequenceSpace` and `RecvSequenceSpace` as its attributes. These structs are instrumental in the bookkeeping of TCP's sequence and acknowledgment numbers, which are paramount for the reliable delivery of data. Let's delve into the specifics.
 
 The `SendSequenceSpace` struct encapsulates several variables crucial for the sending side of our TCP connection. Key among them are:
 
@@ -461,9 +504,10 @@ We set out to implement the `accept` method, This method has now been augmented 
 
 As an aside - it is important to note that in the current implementation, the `connections` HashMap is vulnerable to a SYN flood attack. In such an attack, an adversary could send a large number of TCP SYN (synchronization) packets, each with a different source address and port, but all targeting the same destination. Since the `connections` HashMap automatically creates a new entry for each unique `Connection`, an attacker could easily exhaust the system's memory by populating the HashMap with a multitude of fake entries. This could lead to resource exhaustion and, ultimately, a denial of service (DoS).
 
-In production-grade TCP implementations, measures are usually put in place to mitigate such risks. This can include using syn cookies - a stateless method where the server does not allocate resources for a SYN request until the handshake is completed. However, for this project we will not be taking any steps to prevent The syn flood attack.
+In production-grade TCP implementations, measures are usually put in place to mitigate such risks. This can include using syn cookies - a stateless method where the server does not allocate resources for a SYN request until the handshake is completed. However, for this project, we will not be taking any steps to prevent The syn flood attack.
 
-At this point you are probably curious and see the long lines of code we have written in action. We should go ahead and test our application. First, We will start our program by running the `run.sh` script which will build & execute our binary and give it the necessary elevated network access, next we will use netcat to attempt to establish a TCP connection with our application and finally to visualize things we will use tshark to monitor and capture packets on our tun0 interface by running `tshark -I tun0`. 
+At this point, you are probably curious and see the long lines of code we have written in action. We should go ahead and test our application. First, We will start our program by running the `run.sh` script which will build & execute our binary and give it the necessary elevated network access, next, we will use Netcat to attempt to establish a TCP connection with our application, and finally to visualize things we will use tshark to monitor and capture packets on our tun0 interface by running `tshark -I tun0`. 
+
 ```
 1   0.000000   fe80::a2b3:c4d5:e6f7 -> ff02::2  ICMPv6 110 Router Solicitation from a2:b3:c4:d5:e6:f7
 2   0.002123   fe80::1:1 -> fe80::a2b3:c4d5:e6f7  ICMPv6 150 Router Advertisement from 00:11:22:33:44:55 (MTU: 1500)
@@ -472,6 +516,6 @@ At this point you are probably curious and see the long lines of code we have wr
 5   0.006999   fe80::a2b3:c4d5:e6f7 -> fe80::1:1   TCP 66 51234->80 [ACK] Seq=1 Ack=1 Win=43000 Len=0
 
 ```
-If everything goes well you should see sth similar to what we see above. This shows that our host first asks for router information, then gets a reply from a router. After that, we see the steps of a TCP connection being made.
+If everything goes well you should see sth similar to what we see above. This shows that our host first asks for router information, and then gets a reply from a router. After that, we see the steps of a TCP connection being made.
 
 What's next on our agenda? If you have been paying attention, you'll notice we've tackled the initial two steps of the TCP three-way handshake. When a SYN from the client comes our way, our server promptly shoots back with a SYN-ACK. After dispatching that SYN-ACK, the server gracefully steps into the `SynRcvd` state, poised and ready for the client's ACK to seal the handshake deal. The moment we capture and process this ACK, we'd ideally transition our connection into the `Established` state, signaling the birth of a full-fledged TCP connection. However, there's a piece of the puzzle missing here: our code is still in the waiting room, yet to handle the client's ACK. And that, my friends, is our next port of call.

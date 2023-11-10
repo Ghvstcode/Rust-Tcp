@@ -43,7 +43,7 @@ use std::io;
 
 fn main() -> io::Result<()> {
     // Create a new TUN interface named "tun0" in TUN mode.
-    let nic = tun_tap::Iface::new("tune", tun_tap::Mode::Tun)?;
+    let nic = tun_tap::Iface::new("tun0", tun_tap::Mode::Tun)?;
 
     // Define a buffer of size 1504 bytes (maximum Ethernet frame size without CRC) to store received data.
     let mut buf = [0u8; 1504];
@@ -84,7 +84,7 @@ Next, we activate the network interface by executing `sudo ip link set up dev tu
 Now we're all set to test. If you recall,  earlier we said we will be dealing with raw network packets in out user space program that the kernel sends us, well lets see it in action. Go ahead and run the command below to ping our virtual network interface or any subnet within it. [while still executing our binary]
 
 ```
-ping - I tun0 192.168.0.2 
+ping -I tun0 192.168.0.2 
 ```
 
 You will notice that our application receives some raw bytes of date. Something like below. That is amazing.

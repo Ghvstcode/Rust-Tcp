@@ -11,7 +11,7 @@ loop {
     }     
 ```
 
-Now when we run our program, we can notice the flags and proto fields being printed out. In my case, the flag prints a value of 0 & proto prints out "86dd". To make sense of what the proto field means we can look at this table mapping ether types to protocols and we can see that the value of the proto field we parsed corresponds to [Internet Protocol Version 6](https://en.wikipedia.org/wiki/Internet_Protocol_Version_6 "Internet Protocol Version 6") (IPv6). 
+Now when we run our program, we can notice the flags and proto fields being printed out. In my case, the flag prints a value of 0 & proto prints out "86dd". To make sense of what the proto field means we can look at this [table mapping](https://en.wikipedia.org/wiki/EtherType#Values) ether types to protocols and we can see that the value of the proto field we parsed corresponds to [Internet Protocol Version 6](https://en.wikipedia.org/wiki/Internet_Protocol_Version_6 "Internet Protocol Version 6") (IPv6). 
 
 Since we are going to be focusing on ipv4 in this implementation we can add a conditional check to our code to ignore any packets whose ether type is not ipv4 by adding this line
 
@@ -22,10 +22,10 @@ continue;
 }
 ```
 
-Now that we have made sense of the first 4 bytes which were prepended to the ethernet frame by the kernel, we are left with the main TCP data and we need to make sense of it. Since our main concern is implementing the protocol, we shall once again recruit a crate to help parse the IP packet and TCP information. Although we will be using a crate to do the parsing, It is important to still understand what is happening. We are essentially going to be encoding the IPV4 header in our code 
+Now that we have made sense of the first 4 bytes which were prepended to the ethernet frame by the kernel, we are left with the main TCP data and we need to make sense of it. Since our main concern is implementing the protocol, we shall once again recruit a crate to help parse the IP packet and TCP information. Although we will be using a crate to do the parsing, it is important to still understand what is happening. We are essentially going to be encoding the IPV4 header in our code 
 <img width="951" alt="Screenshot 2023-10-31 at 16 49 50" src="https://github.com/Ghvstcode/Rust-Tcp/assets/46195831/8eaf421d-603e-4c19-a033-20020085f2c5">
 
-Once we decode the IP packet we will be able to get some important information like the Destination Address, The source address, and the protocol. 
+Once we decode the IP packet we will be able to get some important information like the destination address, the source address, and the protocol. 
 The crate we shall be using for parsing the IP Packet header is etherparse. To add it to your project add the the following to your cargo.toml
 ```
 etherparse = "0.13.0"

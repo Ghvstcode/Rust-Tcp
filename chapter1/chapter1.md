@@ -3,11 +3,11 @@ The task of building our own TCP stack presents a unique set of challenges. Norm
 
 However, things get tricky when you're aiming to construct a custom TCP stack. With your own custom TCP stack, you're not just a consumer of network services; you have to be the manager, the processor, and the dispatcher. That means you need to interact directly with raw network packets, process them, and then send them off to their respective destinations. In essence, you'll have to bypass the operating system's built-in TCP stack to directly receive and process raw packets from the internet within your user-space TCP stack.
 
-To allow us achieve our sub-goal of of handling raw network packets directly[in the user space], we're going to set up a virtual network interface. The virtual network interface will "trick" the kernel into passing incoming packets directly to it, just like a physical NIC (Network Interface Card), but without the kernel meddling in the raw packet processing. For this little trick, we'll employ the Linux TUN/TAP device driver, zeroing in on the TUN (Network) side of things to spin up our virtual network interface.
+To allow us to achieve our sub-goal of handling raw network packets directly[in the user space], we're going to set up a virtual network interface. The virtual network interface will "trick" the kernel into passing incoming packets directly to it, just like a physical NIC (Network Interface Card), but without the kernel meddling in the raw packet processing. For this little trick, we'll employ the Linux TUN/TAP device driver, zeroing in on the TUN (Network) side of things to spin up our virtual network interface.
 
-At its core - a TUN device is a a [virtual] software-based network interface that exists in the operating system's kernel. This virtual network interface behaves much like a physical network interface, but it is not tied to a physical piece of hardware. The TUN device operates at Layer 3 of the OSI model and exposes a file descriptor to any applications that need to send or receive packets. 
+At its core - a TUN device is a [virtual] software-based network interface that exists in the operating system's kernel. This virtual network interface behaves much like a physical network interface, but it is not tied to a physical piece of hardware. The TUN device operates at Layer 3 of the OSI model and exposes a file descriptor to any applications that need to send or receive packets. 
 
-Once we've got our TUN device up and running, any packet aimed at its associated IP address will be redirected by the kernel—no questions asked, no packet processed—straight into the lap of the user-space application that has bound itself to theTUN device. This setup gives us the carte blanche we need to fiddle with raw packets to our heart's content.
+Once we've got our TUN device up and running, any packet aimed at its associated IP address will be redirected by the kernel—no questions asked, no packet processed—straight into the lap of the user-space application that has bound itself to the TUN device. This setup gives us the carte blanche we need to fiddle with raw packets to our heart's content.
 
 ### Packet Handling Workflow: TUN Device vs Standard Network Stack
 
@@ -23,7 +23,7 @@ Once we've got our TUN device up and running, any packet aimed at its associated
 | 7     | Optional: Packet sent out via TUN.       | N/A                                    |
 | 8     | Kernel routes the outgoing packet.       | Kernel routes the outgoing packet.     |
 
-- **With a TUN Device**: The kernel does minimal work. It forwards the packet to the TUN device, allowing a user-space application(our TCP application) to handle most of the packet processing, including optional modifications and potential retransmission.
+- **With a TUN Device**: The kernel does minimal work. It forwards the packet to the TUN device, allowing a user-space application (our TCP application) to handle most of the packet processing, including optional modifications and potential retransmission.
     
 - **Without a TUN Device**: The kernel's own network stack handles the packet completely, including any routing, filtering, and NAT operations. The application simply reads the packet from a socket, abstracted from the underlying details.
 
@@ -81,7 +81,7 @@ valid_lft forever preferred_lft forever
 
 Next, we activate the network interface by executing `sudo ip link set up dev tun0`.
 
-Now we're all set to test. If you recall,  earlier we said we will be dealing with raw network packets in out user space program that the kernel sends us, well lets see it in action. Go ahead and run the command below to ping our virtual network interface or any subnet within it. [while still executing our binary]
+Now we're all set to test. If you recall,  earlier we said we will be dealing with raw network packets in out user space program that the kernel sends us, well lets see it in action. Go ahead and run the command below to ping our virtual network interface or any subnet within it [while still executing our binary].
 
 ```
 ping -I tun0 192.168.0.2 

@@ -7,7 +7,7 @@ Before we continue with our implementation, we should add a helper method "write
 Within the `write` method, the sequence and acknowledgment numbers are first set to the appropriate values for the outgoing packet.
 * The acknowledgment number is configured to `self.recv.nxt`, reflecting the receiver's next expected byte. The acknowledgment number is crucial for the proper sequencing of the data, as it indicates the successful receipt of all data up to this point and what the connection is prepared to receive next. This accounting starts from the initial receive sequence number (IRS), combined with the number of bytes received so far.
 * The sequence number for the packet to be sent is passed into the function and updated to the `self.tcp.sequence_number` field, ensuring that the TCP segment carries the correct sequence information. The `write` method also determines the maximum amount of data it can send in a single segment, which as discussed earlier is referred to as the limit within the function.
-* Subsequent to the initial sequence setting, the method proceeds to prepare the outgoing TCP segment. The segment's data payload is derived from the `self.unacked` queue, which contains the data bytes that have been sent but not yet acknowledged. We are yet to discuss the unacked queue - so for now I will skip the explanation of this and revist it later on when we are talking about Data transmission.
+* Subsequent to the initial sequence setting, the method proceeds to prepare the outgoing TCP segment. The segment's data payload is derived from the `self.unacked` queue, which contains the data bytes that have been sent but not yet acknowledged. We are yet to discuss the unacked queue - so for now I will skip the explanation of this and revisit it later on when we are talking about Data transmission.
 * The write method, after assembling the payload data then proceeds to write the IP header into `buf`, updating the payload length field to include the actual size of the TCP payload. It deliberately leaves space for the TCP header, which will be filled in after the payload is written because the TCP checksum calculation requires the complete segment, including both headers and payload.
 * After writing the payload, the TCP checksum is calculated over the entire segment, including the pseudo-header, TCP header, and payload, for error-checking. Once the checksum is computed, the TCP header is written into the reserved space in `buf`. The transmission control flags, like `SYN` and `FIN`, also influence the sequence space. If either flag is set, `write` method increments the sequence number since these flags consume a sequence number in the handshake or termination process.
 * As it finishes constructing the packet, the method updates various state variables such as `next_seq`, which tracks the next sequence number expected by the sender after accounting for any transmitted data and control flags. It then logs the current time against the sequence number in `self.timers.send_times` (will visit later) for later use in estimating the round-trip time (RTT) and managing retransmissions.
@@ -356,7 +356,68 @@ fn is_between_wrapped(start: u32, x: u32, end: u32) -> bool {
     }
 ```
 
-TODO - CONCLUDE THIS CHAPTER, SHOW THE RESULTS OF RUNNING THIS CODE
+### Testing it out
+With `on_packet`, `write` and `send_rst` in place, our stack can now carry a connection all the way from the first SYN to TIME-WAIT. Let's see it in action. Just like in the previous chapters, we start our program with the `run.sh` script from chapter 1, which builds the binary, grants it `cap_net_admin`, and brings up `tun0` with the address `192.168.0.1/24`. Then, in a second terminal, we start capturing packets on our interface:
+
+```
+tshark -i tun0
+```
+
+And in a third terminal, we use Netcat to open a connection to an address inside our subnet. Any port will do, since we still accept a SYN on every port (we'll fix that in the next chapter):
+
+```
+nc 192.168.0.2 80
+```
+
+The exact output depends on your kernel, your Netcat and timing, so take the capture below as an example of what you should see rather than a literal recording. With our ISS of 0 (and tshark showing relative sequence numbers for the client), it should look something like this:
+
+```
+1   0.000000   192.168.0.1 -> 192.168.0.2   TCP 60 51234->80 [SYN] Seq=0 Win=64240 Len=0 MSS=1460 SACK_PERM=1 TSval=3155421 TSecr=0 WS=128
+2   0.000187   192.168.0.2 -> 192.168.0.1   TCP 40 80->51234 [SYN, ACK] Seq=0 Ack=1 Win=10 Len=0
+3   0.000231   192.168.0.1 -> 192.168.0.2   TCP 40 51234->80 [ACK] Seq=1 Ack=1 Win=64240 Len=0
+4   0.000402   192.168.0.2 -> 192.168.0.1   TCP 40 80->51234 [FIN, ACK] Seq=1 Ack=1 Win=10 Len=0
+5   0.000889   192.168.0.1 -> 192.168.0.2   TCP 40 51234->80 [FIN, ACK] Seq=1 Ack=2 Win=64240 Len=0
+6   0.001013   192.168.0.2 -> 192.168.0.1   TCP 40 80->51234 [ACK] Seq=2 Ack=2 Win=10 Len=0
+```
+
+Notice that this time there is no router chatter before the handshake: everything is plain IPv4 between the kernel's end of `tun0` (`192.168.0.1`) and our user-space stack, which answers for `192.168.0.2`. Let's walk through it packet by packet:
+
+1. **SYN**: Netcat asks the kernel to connect, and the kernel sends a SYN. There is no entry for this quad in our `connections` map yet, so `main.rs` hands it to `accept`. We record the client's sequence number as `recv.irs`, set `recv.nxt` to one past it (the SYN consumes a sequence number), and enter `SynRcvd`.
+2. **SYN-ACK**: still inside `accept`, we set the SYN and ACK flags and call `write` with `send.nxt`. The segment carries `Seq=0` (our ISS) and `Ack=1`, and the `Win=10` is the tiny window we hard-coded. Because the SYN flag is set, `write` accounts for it in the sequence space, so our next sequence number becomes 1.
+3. **ACK**: the client completes the handshake. This time the quad is in the map, so the segment goes to `on_packet`. It is zero-length and sits right at `recv.nxt`, so it passes the valid segment check. Its acknowledgment number (1) falls between `send.una - 1` and `send.nxt + 1`, so we move from `SynRcvd` to `Estab`. The connection is now established.
+4. **FIN, ACK**: we don't wait around for long. In the same call to `on_packet`, the `Estab | FinWait1 | FinWait2` block sees that the ACK acknowledges something new (our SYN), so it moves `send.una` up to 1. Since we are in `Estab`, it sets `self.tcp.fin = true`, calls `write` with `Seq=1`, and moves us to `FinWait1`. We have nothing to say, so we hang up right away. The FIN consumes sequence number 1, so our next sequence number becomes 2.
+5. **FIN, ACK** from the client: the kernel acknowledges our FIN (`Ack=2`). Netcat sees end-of-file and closes its side too, so the kernel's FIN usually rides along on the same segment. Back in `on_packet`, `slen` is 1 because of the FIN, so `recv.nxt` moves to 2. The ACK is new, so `send.una` becomes 2. Our FIN was the second sequence number we used (SYN first, then FIN), so `send.una == send.iss + 2` holds and we move from `FinWait1` to `FinWait2`. Then, since the segment also carries a FIN, the `match` on our state finds us in `FinWait2`.
+6. **ACK**: we acknowledge the client's FIN by calling `write` one last time (`Seq=2`, `Ack=2`) and enter `TimeWait`. Both directions are now shut down.
+
+While this happens, the terminal running our binary prints the debug output from `write`. Remember that the `ack` value is relative (`self.recv.nxt - self.recv.irs`), while `seq` is the absolute sequence number we pass in. With our ISS of 0, the two look alike. You should see something along these lines:
+
+```
+write(ack: 1, seq: 0, limit: 0) syn true fin false
+using offset 0 base 0 in ([], [])
+write(ack: 1, seq: 1, limit: 0) syn false fin true
+using offset 0 base 1 in ([], [])
+write(ack: 2, seq: 2, limit: 0) syn false fin false
+using offset 0 base 2 in ([], [])
+```
+
+One line pair per segment we sent: the SYN-ACK, our FIN, and the final ACK. The unacked queue is empty every time (`([], [])`), because we haven't sent any data yet, which is exactly why `limit` is always 0.
+
+**Aside** <br>
+
+Not every client folds its ACK and its FIN into a single segment. If Netcat keeps its side open (some versions wait for you to press Ctrl-D or Ctrl-C), or the kernel acknowledges our FIN before the application closes, you'll see a bare `[ACK] Seq=1 Ack=2` first and the client's `[FIN, ACK]` some time later. The bare ACK moves us to `FinWait2` as expected. But look closely at what happens to the FIN that follows: its acknowledgment number is still 2, which equals `send.una`, and our "is this ACK new?" check uses the strict `is_between_wrapped(self.send.una, ackn, ...)`. That returns early, so we never reach the FIN handling and never send that last ACK. The client will keep retransmitting its FIN. This is a nice reminder that a duplicate ACK is not an invalid segment. It's one of the rough edges we'll smooth out when we revisit ACK processing.
+
+### Known gaps
+We have left a fair number of `TODO`s in this chapter's code. That was on purpose: we wanted the full lifecycle of a connection working end to end before polishing every corner of RFC 793. Here are the ones to keep in mind:
+
+* **RST sequence numbers**: `send_rst` currently zeroes out the sequence and acknowledgment numbers. The RFC wants the reset to take its sequence number from the incoming segment's ACK field (or be zero with the ACK set to the segment's sequence number plus its length), and wants synchronized states to answer an unacceptable segment with an empty ACK instead of a reset. We also don't send the RST that RFC 793 requires for an unacceptable ACK in `SynRcvd` yet.
+* **TIME-WAIT duration**: we enter `TimeWait` and then stay there forever. A real stack waits for twice the maximum segment lifetime (2MSL) before deleting the TCB, so that a lost final ACK can still be retransmitted.
+* **New ACKs and queued data**: when an ACK moves `send.una` forward, we should drop the acknowledged bytes and send anything that has been queued but not yet sent. For now we simply `assert!(data.is_empty())`, which means a client that actually sends us data will crash our program.
+* **The unacked queue and `send_times`**: `write` already reads its payload from `self.unacked` and records timestamps in `self.timers.send_times`, but we haven't really put either one to work. They are the foundation for data transmission, round-trip time estimation and retransmission, and we'll come back to them in detail in later chapters.
+
+### Conclusion
+In this chapter we finished the three-way handshake and, for good measure, tore the connection down again. We added a `write` helper that builds and sends any segment we need, implemented sequence number validation with wrapping arithmetic so that our comparisons keep working once the 32-bit sequence space rolls over, and made `on_packet` walk the state machine from `SynRcvd` through `Estab`, `FinWait1` and `FinWait2` all the way to `TimeWait`. Seeing a clean handshake and FIN exchange in tshark, with packets we built byte by byte, is a good milestone.
+
+Our stack still answers a SYN on any port at all, though, and it closes every connection as soon as it opens. In Chapter 5 we'll start turning it into something an application could actually use: listening on specific ports, modeling the interface on Rust's standard library `TcpListener` and `TcpStream` types, and managing several connections at the same time.
 
 ### References
 - [Corresponding Code](https://github.com/jonhoo/rust-tcp/commit/fa1665f4141e205cde056d5eaa872933169e2fac)

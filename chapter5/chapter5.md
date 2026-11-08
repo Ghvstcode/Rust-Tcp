@@ -173,24 +173,26 @@ fn packet_loop(mut nic: tun_tap::Iface, shared: Arc<Shared>) -> io::Result<()> {
         let iph = match etherparse::Ipv4HeaderSlice::from_slice(&buf[..nbytes]) {
             Ok(iph) => iph,
             Err(e) => {
-                eprintln!("ignoring weird packet: {:?}", e);
+                eprintln!("An error occurred while parsing the IP packet: {:?}", e);
                 continue;
             }
         };
+        let src = iph.source_addr();
+        let dst = iph.destination_addr();
         if iph.protocol() != 0x06 {
             continue; // not TCP
         }
         let tcph = match etherparse::TcpHeaderSlice::from_slice(&buf[iph.slice().len()..nbytes]) {
             Ok(tcph) => tcph,
             Err(e) => {
-                eprintln!("ignoring weird tcp packet: {:?}", e);
+                eprintln!("An error occurred while parsing the TCP packet: {:?}", e);
                 continue;
             }
         };
         let datai = iph.slice().len() + tcph.slice().len();
         let quad = Quad {
-            src: (iph.source_addr(), tcph.source_port()),
-            dst: (iph.destination_addr(), tcph.destination_port()),
+            src: (src, tcph.source_port()),
+            dst: (dst, tcph.destination_port()),
         };
         let local_port = quad.dst.1;
 

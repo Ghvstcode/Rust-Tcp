@@ -166,7 +166,7 @@ fn main() -> io::Result<()> {
 			c.get_mut().on_packet(&mut nic, iph, tcph, &buf[datai..nbytes])?; 
 			} 
 			Entry::Vacant(e) => { 
-			if let Some(c) = tcp::Connection::on_accept(&mut nic, iph, tcph, &buf[datai..nbytes])? { 
+			if let Some(c) = tcp::Connection::accept(&mut nic, iph, tcph, &buf[datai..nbytes])? { 
 			e.insert(c); 
 			} } } }
                     }
@@ -188,9 +188,14 @@ fn main() -> io::Result<()> {
 
 In the code, we establish the foundation of our TCP stack by defining the key data structures and functions needed for a TCP connection. Central to this architecture is the `Quad` struct, which serves as the unique identifier for each entry in a `HashMap` named `connections`. This HashMap acts as an in-memory registry for TCP connections that are either active or in the process of being established. Each entry in the HashMap consists of an instance of `Quad` mapped to its current TCP Connection. This state is represented by an enumeration type, defined in `tcp.rs`, embodying one of four TCP connection states: `Closed`, `Listen`, `SynRcvd`, or `Estab`.
 
-We introduce two primary methods for packet handling: `on_accept` and `on_packet`. The `on_accept` method is responsible for handling incoming packets that initiate new connections. Conversely, the `on_packet` method manages packets for existing connections. Both methods log essential information such as source and destination IP addresses and ports, as well as the payload length. Finally, in `main.rs`, we make use of pattern matching to differentiate between new and existing connections, based on the incoming packets.
+We introduce two primary methods for packet handling: `accept` and `on_packet`. The `accept` method is responsible for handling incoming packets that initiate new connections. Conversely, the `on_packet` method manages packets for existing connections. Both methods log essential information such as source and destination IP addresses and ports, as well as the payload length. Finally, in `main.rs`, we make use of pattern matching to differentiate between new and existing connections, based on the incoming packets.
 
 We're making steady progress. Thus far, we've ensured that we're receiving the correct IPv4 packets, and we've implemented a mechanism to associate incoming packets with their respective states, keyed by a unique connection quad. Our next objective is to focus on implementing TCP handshakes, a critical step for facilitating a dependable connection between a client and a server. The client initiates this process by sending a SYN (Synchronize) packet, while the server listens for these incoming requests. This handshake is a three-stage procedure involving a SYN packet, followed by a SYN-ACK (Synchronize-Acknowledgment) packet, and concluding with an ACK (Acknowledgment) packet. During this phase, we'll enhance the `accept` method to manage these distinct types of handshake packets.
+
+**Aside** <br>
+
+If you look closely at the next listing, you'll notice two small changes in how we read packets. We now open the interface with `tun_tap::Iface::without_packet_info` instead of `tun_tap::Iface::new`, and the `4` offsets are gone from our buffer slices (`&buf[..nbytes]` instead of `&buf[4..nbytes]`). Remember the extra 4 bytes of flags and protocol that we discussed in chapter 2? `Iface::new` asks the kernel to prepend that packet information to every packet, which is why we had to skip over it by hand. `without_packet_info` tells the kernel to leave it out, so the IPv4 header starts at the very first byte of the buffer. We were only using those bytes to skip past them anyway, so this saves us from carrying `4 +` around in every slice. From here on, the rest of the book uses `without_packet_info`. If you'd rather keep `Iface::new`, that works too, but you'll need to keep the offsets everywhere, including when writing packets back out.
+
 ```Rust
 // main.rs
 // Required imports

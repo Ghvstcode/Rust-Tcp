@@ -54,7 +54,7 @@ match etherparse::Ipv4HeaderSlice::from_slice(&buf[4..nbytes]) {
 
         // Attempt to parse the TCP header from the buffer slice.
         // Here, we adjust the starting slice based on the length of the IPv4 header.
-        match etherparse::TcpHeaderSlice::from_slice(&buf[4 + p.slice().len()..]) {
+        match etherparse::TcpHeaderSlice::from_slice(&buf[4 + iph.slice().len()..]) {
             // If TCP header parsing was successful, proceed.
             Ok(tcph) => {
                 // Print the details: Source IP, Destination IP, and the Destination Port.

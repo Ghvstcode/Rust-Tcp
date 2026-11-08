@@ -356,7 +356,7 @@ fn is_between_wrapped(start: u32, x: u32, end: u32) -> bool {
     }
 ```
 
-### Testing it out
+### Testing It Out
 With `on_packet`, `write` and `send_rst` in place, our stack can now carry a connection all the way from the first SYN to TIME-WAIT. Let's see it in action. Just like in the previous chapters, we start our program with the `run.sh` script from chapter 1, which builds the binary, grants it `cap_net_admin`, and brings up `tun0` with the address `192.168.0.1/24`. Then, in a second terminal, we start capturing packets on our interface:
 
 ```
@@ -406,7 +406,7 @@ One line pair per segment we sent: the SYN-ACK, our FIN, and the final ACK. The 
 
 Not every client folds its ACK and its FIN into a single segment. If Netcat keeps its side open (some versions wait for you to press Ctrl-D or Ctrl-C), or the kernel acknowledges our FIN before the application closes, you'll see a bare `[ACK] Seq=1 Ack=2` first and the client's `[FIN, ACK]` some time later. The bare ACK moves us to `FinWait2` as expected. But look closely at what happens to the FIN that follows: its acknowledgment number is still 2, which equals `send.una`, and our "is this ACK new?" check uses the strict `is_between_wrapped(self.send.una, ackn, ...)`. That returns early, so we never reach the FIN handling and never send that last ACK. The client will keep retransmitting its FIN. This is a nice reminder that a duplicate ACK is not an invalid segment. It's one of the rough edges we'll smooth out when we revisit ACK processing.
 
-### Known gaps
+### Loose Ends
 We have left a fair number of `TODO`s in this chapter's code. That was on purpose: we wanted the full lifecycle of a connection working end to end before polishing every corner of RFC 793. Here are the ones to keep in mind:
 
 * **RST sequence numbers**: `send_rst` currently zeroes out the sequence and acknowledgment numbers. The RFC wants the reset to take its sequence number from the incoming segment's ACK field (or be zero with the ACK set to the segment's sequence number plus its length), and wants synchronized states to answer an unacceptable segment with an empty ACK instead of a reset. We also don't send the RST that RFC 793 requires for an unacceptable ACK in `SynRcvd` yet.
@@ -414,10 +414,9 @@ We have left a fair number of `TODO`s in this chapter's code. That was on purpos
 * **New ACKs and queued data**: when an ACK moves `send.una` forward, we should drop the acknowledged bytes and send anything that has been queued but not yet sent. For now we simply `assert!(data.is_empty())`, which means a client that actually sends us data will crash our program.
 * **The unacked queue and `send_times`**: `write` already reads its payload from `self.unacked` and records timestamps in `self.timers.send_times`, but we haven't really put either one to work. They are the foundation for data transmission, round-trip time estimation and retransmission, and we'll come back to them in detail in later chapters.
 
-### Conclusion
-In this chapter we finished the three-way handshake and, for good measure, tore the connection down again. We added a `write` helper that builds and sends any segment we need, implemented sequence number validation with wrapping arithmetic so that our comparisons keep working once the 32-bit sequence space rolls over, and made `on_packet` walk the state machine from `SynRcvd` through `Estab`, `FinWait1` and `FinWait2` all the way to `TimeWait`. Seeing a clean handshake and FIN exchange in tshark, with packets we built byte by byte, is a good milestone.
+What's next on our agenda? Let's take stock. In this chapter we sealed the three-way handshake and, for good measure, tore the connection right back down again. We added a `write` helper that builds and sends any segment we need, taught our sequence number comparisons to survive the 32-bit sequence space rolling over, and got `on_packet` walking the state machine from `SynRcvd` through `Estab`, `FinWait1` and `FinWait2` all the way to `TimeWait`. Seeing a clean handshake and FIN exchange show up in tshark, made of packets we built byte by byte, is a milestone worth pausing on.
 
-Our stack still answers a SYN on any port at all, though, and it closes every connection as soon as it opens. In Chapter 5 we'll start turning it into something an application could actually use: listening on specific ports, modeling the interface on Rust's standard library `TcpListener` and `TcpStream` types, and managing several connections at the same time.
+However, if you have been paying attention, you'll notice our stack is still a little too eager. It answers a SYN on any port at all, and it hangs up on every connection the moment it opens. No application could actually use it yet. In Chapter 5 we'll fix that by listening on specific ports, modeling our interface on Rust's standard library `TcpListener` and `TcpStream` types, and managing several connections at the same time. Grab a coffee, because that is where we are headed next.
 
 ### References
 - [Corresponding Code](https://github.com/jonhoo/rust-tcp/commit/fa1665f4141e205cde056d5eaa872933169e2fac)

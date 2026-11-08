@@ -18,7 +18,8 @@ This is the order in which to read this book:
 * [Chapter 2 - Parsing The Bits](https://github.com/Ghvstcode/Rust-Tcp/blob/main/chapter2/chapter2.md#parsing-the-bits)
 * [Chapter 3 - The connection Quad](https://github.com/Ghvstcode/Rust-Tcp/blob/main/chapter3/chapter3.md#the-connection-quad)
 * [Chapter 4 - The Final Handshake](https://github.com/Ghvstcode/Rust-Tcp/blob/main/chapter4/chapter4.md#the-final-handshake)
-* Chapter 5(coming soon)
+* [Chapter 5 - The Listening Socket](https://github.com/Ghvstcode/Rust-Tcp/blob/main/chapter5/chapter5.md#the-listening-socket)
+* Chapter 6(coming soon)
 
 I have deliberately not included complete code samples within the book, to nudge you towards active learning—writing the code yourself rather than copying it. But don’t worry, each chapter is paired with a relevant commit link to Jon's repository, where you can check your work. If I get [requests](https://github.com/Ghvstcode/Rust-Tcp/issues/new) to include code samples to each chapter then I shall consider doing so.
 

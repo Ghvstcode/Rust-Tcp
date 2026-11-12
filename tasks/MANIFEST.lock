@@ -1,0 +1,32 @@
+{
+  "lock_version": 1,
+  "spec_version": 1,
+  "manifests": [
+    {
+      "path": "tasks/0001-tun-device.yaml",
+      "id": "0001-tun-device",
+      "sha256": "0a98aab261879e85679c87aac151d8ea152e501a945bbae0b1d3ecae6d5d3efa"
+    },
+    {
+      "path": "tasks/0002-parsing-the-bits.yaml",
+      "id": "0002-parsing-the-bits",
+      "sha256": "5e617b582daee1ae793877888c26e8d6cdd7afe35c0a08bcddef7b7ed5384d2c"
+    },
+    {
+      "path": "tasks/0003-connection-quad.yaml",
+      "id": "0003-connection-quad",
+      "sha256": "4598b30f6cacd2e10f193d968c9171d895dda8bdd54b2034074d74d827ec6ee6"
+    },
+    {
+      "path": "tasks/0004-final-handshake.yaml",
+      "id": "0004-final-handshake",
+      "sha256": "ad12c0cc88edeaafbb920c275382a4d566afa467dd3f42a249568c3e4fa102dd"
+    },
+    {
+      "path": "tasks/0005-listening-socket.yaml",
+      "id": "0005-listening-socket",
+      "sha256": "9d37eda61e02b7aa5c1202b8bfdee498465930a7eb8f0b030c8660d5d29a9a5f"
+    }
+  ],
+  "rotations": []
+}

@@ -1,0 +1,107 @@
+spec_version: 1
+id: 0003-connection-quad
+title: "Chapter 3: answer a SYN with a SYN-ACK (Connection::accept)"
+prompt: |
+  This repository is the book "Implementing TCP in Rust". The prose lives in
+  chapter1/ to chapter6/ (do not touch it). code/ is the book's code
+  companion: a Rust crate (package `tcp`, standard library only) that ends
+  where chapter 5 ends. It is built one chapter at a time by different
+  people's coding agents; this is task 0003-connection-quad, chapter 3. The
+  skeleton already exists: every module is declared, every shared type is
+  defined, and every public function has its final signature and a doc
+  comment, with `todo!()` bodies. Your job is to replace the stub named below
+  with a real implementation. You cannot ask questions: everything you need is
+  in this text, in the repository (chapter3/chapter3.md explains the why), and
+  in the acceptance test code/acceptance/t0003_connection_quad.rs.
+
+  Implement chapter 3's `Connection::accept` in `code/src/tcp/accept.rs`:
+  the first two steps of the three-way handshake. Read
+  code/src/tcp/mod.rs (State, SendSequenceSpace, RecvSequenceSpace and
+  Connection; every field is pub) and code/src/packet/mod.rs (Ipv4Header,
+  TcpHeader, PROTO_TCP). The chapter 2 packet code is merged and working:
+  Ipv4Header::new / set_payload_len / header_len / write and TcpHeader::new /
+  header_len / calc_checksum_ipv4 / write. The `Nic` trait is in
+  code/src/lib.rs: `nic.send(&datagram)` sends one complete datagram.
+
+    Connection::accept(nic: &mut dyn Nic, iph: &Ipv4Header, tcph: &TcpHeader,
+                       data: &[u8]) -> io::Result<Option<Connection>>
+
+  The packet loop (chapter 5) calls it for a segment on a quad that has no
+  connection yet.
+
+  - If tcph.syn is false: return Ok(None) and send nothing. Ignore `data`.
+  - Otherwise, as in the book, with iss = 0 and wnd = 10:
+      state = State::SynRcvd
+      send  = SendSequenceSpace { iss, una: iss, nxt: iss + 1, wnd: 10,
+                                  up: false, wl1: 0, wl2: 0 }
+              (nxt is iss + 1 because our SYN consumes one sequence number)
+      recv  = RecvSequenceSpace { irs: tcph.sequence_number,
+                                  nxt: irs.wrapping_add(1),
+                                  wnd: tcph.window_size, up: false }
+              (recv.wnd copies the client's window, exactly as the book does)
+      tcp   = TcpHeader::new(tcph.destination_port, tcph.source_port, iss, 10)
+              with acknowledgment_number = recv.nxt, syn = true, ack = true
+      ip    = Ipv4Header::new(0, 64, PROTO_TCP, iph.destination, iph.source),
+              then ip.set_payload_len(tcp.header_len())
+      unacked = empty, closed_at = None
+    Compute tcp.checksum = tcp.calc_checksum_ipv4(&ip, &[]), write the IPv4
+    header and then the TCP header into ONE buffer, and send it with exactly
+    one nic.send call (a TUN device takes one datagram per write). The
+    resulting SYN-ACK is 40 bytes: from our address and port to theirs,
+    Seq = iss, Ack = the client's ISN + 1, flags SYN and ACK and nothing
+    else, window 10, TTL 64, no options, no payload.
+    After sending, set the connection's tcp.syn = false (the SYN is out;
+    later segments must not repeat it), leave tcp.ack = true, and return
+    Ok(Some(connection)).
+  - An error from nic.send is returned with `?`, never a panic. Convert a
+    PacketError into an io::Error (ErrorKind::InvalidData) if one can occur.
+
+  Chapter 4 of the book later rewrites accept to call a `write` helper. That
+  helper belongs to another task (0004), so here accept builds and sends its
+  SYN-ACK itself, like the chapter 3 listing does.
+
+  Not tested, leave open: what accept does with a SYN that also carries RST
+  or ACK (just do not panic), and a random ISS (keep 0; the tests compare
+  against `c.send.iss`, so a later chapter can change it).
+
+  Rules
+    - You may change ONLY the file `code/src/tcp/accept.rs`, plus the marker
+      file code/ci/done/0003-connection-quad (see below). A change to any
+      other file - including the book's chapters, code/Cargo.toml,
+      code/Cargo.lock, code/src/lib.rs, code/src/main.rs, any mod.rs
+      (code/src/tcp/mod.rs included), and anything under code/acceptance/ or
+      code/ci/ other than your marker - makes the whole run be discarded.
+    - Standard library only: no new dependencies. There is no network
+      access; always pass `--offline` to cargo, and run it from code/
+      (`cd code`).
+    - Do not change the name, parameters or return type of any existing
+      `pub` item in your file: other tasks and the acceptance test compile
+      against them. You may add private helpers, and unit tests in a
+      `#[cfg(test)] mod tests` at the bottom of your file.
+    - No `unsafe`. No panics on any input: no `unwrap` on anything that can
+      fail, no overflowing arithmetic on sequence numbers (use
+      wrapping_add). No `todo!()` left behind.
+    - Delete the `#![allow(unused_variables)]` line at the top of the stub
+      and reword its "Stub: ..." doc lines. The code should compile without
+      warnings (prefix a deliberately unused parameter with `_`).
+
+  Finishing
+    1. Create the empty marker file for this task:   : > code/ci/done/0003-connection-quad
+    2. Run the check that will judge your work:      sh code/ci/check.sh 0003-connection-quad
+       It builds the crate, runs the unit tests, compiles every acceptance
+       target, runs code/acceptance/t0003_connection_quad.rs (which you can
+       read but must not change) and re-runs the acceptance test of every
+       task merged before yours. It must end with "check.sh: OK". While
+       iterating, run just your own test from code/ with
+       `cargo test --offline --test t0003_connection_quad`.
+    If the acceptance test and this text ever seem to disagree, the
+    acceptance test wins: make it pass without touching it.
+scope:
+  write:
+    - code/src/tcp/accept.rs
+    - code/ci/done/0003-connection-quad
+verify: sh code/ci/check.sh 0003-connection-quad
+max_tokens: 1500000
+timeout_minutes: 20
+depends_on:
+  - 0002-parsing-the-bits

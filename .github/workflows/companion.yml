@@ -1,0 +1,70 @@
+# CI for the code companion in code/. It is also the judge: AgentFund counts a
+# donor's tokens as *delivered* only when this workflow passes on the branch
+# their agent pushed.
+#
+# Hardening (this file runs code written by strangers' agents):
+#   - `pull_request`, never `pull_request_target`: fork code gets no secrets and a read-only token
+#   - `permissions: contents: read` and nothing else
+#   - no secrets referenced anywhere
+#   - actions pinned by commit SHA
+#   - a wall-clock limit, and superseded runs cancelled
+#   - nothing is downloaded: the crate has no dependencies and cargo runs --offline
+#
+# No `paths:` filter on purpose: if this check is required by branch
+# protection, a prose-only pull request must still get a result. On such a PR
+# the gate takes well under a minute.
+#
+# .github/** is never writable by a task, so a task cannot edit this file.
+name: companion
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: companion-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_NET_OFFLINE: "true"
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Toolchain
+        run: rustc --version && cargo --version && (cargo clippy --version || echo "no clippy")
+
+      # A pull request may add markers; it may never remove or rewrite one.
+      # (Removing a marker would silently drop that task's acceptance test from the gate.)
+      - name: Markers are append-only
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          removed="$(git diff --no-renames --diff-filter=DM --name-only "$BASE_SHA" HEAD -- code/ci/done)"
+          if [ -n "$removed" ]; then
+            echo "::error::this pull request removes or modifies task markers:"
+            echo "$removed"
+            exit 1
+          fi
+
+      # Build, unit tests, clippy, the manifest-lock hash check, and the
+      # acceptance test of every task whose marker is present - including any
+      # marker this pull request adds. A marker without a passing acceptance
+      # test fails here.
+      - name: Gate
+        run: sh code/ci/check.sh
+
+      - name: Task set is consistent
+        run: sh code/ci/scope-audit.sh collisions

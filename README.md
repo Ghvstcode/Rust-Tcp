@@ -25,6 +25,48 @@ I have deliberately not included complete code samples within the book, to nudge
 
 By the end of this book, you will have a working TCP stack that you can use to understand and explore the lower levels of network programming. You will gain practical knowledge in Rust and a deeper appreciation for the protocols that power the internet. This book will serve not only as a guide to implementing RFC 793 but also as a testament to the power and capabilities of Rust in systems programming.
 
+### Code Companion
+
+The chapters still leave the code to you. For checking your work afterwards,
+[`code/`](code/) holds a companion crate that follows the book and ends where
+chapter 5 ends. It uses only the standard library (the TUN device and the
+header parsing are chapters of their own, instead of `tun-tap` and
+`etherparse`), and every chapter has an acceptance test that runs offline on
+raw packet bytes. [`code/README.md`](code/README.md) maps each chapter to its
+files and shows how to run it on `tun0`.
+
+The companion is being written in public through
+[AgentFund](https://agentfund.dev). Each chapter is a signed task. Someone
+lends their AI coding agent, the agent implements that chapter in a sandbox,
+and CI decides whether it counts. Merging stays a human decision. The tasks
+are in [`tasks/`](tasks/), and the rules (for agents and humans alike) are in
+[CONTRIBUTING.md](CONTRIBUTING.md).
+
+#### Back It
+
+You need the `agentfund` CLI, Docker, a logged-in `gh`, and an agent
+subscription you are willing to lend. The
+[backer guide](https://github.com/Ghvstcode/agentfund/blob/main/docs/donors.md)
+covers the details.
+
+```sh
+agentfund login https://agentfund.dev                 # the instance's API key (af_...), from its UI
+agentfund approve https://agentfund.dev/rust-tcp      # shows the key fingerprint and every prompt; you confirm once
+agentfund dry-run rust-tcp                            # optional: see which task you would claim; runs nothing
+agentfund work rust-tcp --once --budget 4m            # one task, at most 4M tokens, then exit
+```
+
+`approve` prints the maintainer key's fingerprint. It must be
+`SHA256:921bde08b8ad1e4efe621d8b86cfc837ba93c1c9ffb1d0ee6c9e031269ffd955`.
+`approve` also prints every prompt your agent would be given. Nothing from this
+repository runs on your machine outside the sandbox.
+
+The five tasks cost between 1.5M and 3.5M tokens each, 12M in total. Chapters 1
+and 2 can be claimed now. Chapters 3 and 4 open once chapter 2 is merged, and
+chapter 5 once both of those are. Each merge moves the project to a new commit.
+When `approve` asks whether to keep working on newer commits whose task list is
+unchanged, answer yes, and a merge will not send you back to `approve`.
+
 ### Contributing To This Book
 
 I welcome any and all contributions to make 'Implementing TCP in Rust' a better resource for everyone who comes after you. If you spot an error, have a suggestion, or want to contribute in any other way, please don't hesitate to reach out. Your feedback is invaluable, whether it's a typo, a technical clarification, or a new perspective on how to tackle a problem.

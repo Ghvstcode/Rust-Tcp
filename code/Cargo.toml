@@ -1,0 +1,50 @@
+[package]
+# The book calls its package `tcp` (`PKG_NAME=tcp` in chapter 1's run.sh), so
+# the library is `tcp::Interface` and the binary is `target/release/tcp`.
+name = "tcp"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.74"
+description = "Code companion to the book 'Implementing TCP in Rust': a user-space TCP stack, one chapter at a time."
+repository = "https://github.com/Ghvstcode/Rust-Tcp"
+readme = "README.md"
+publish = false
+# Acceptance tests are declared explicitly below, one target per task.
+autotests = false
+
+# No [dependencies] section, on purpose. The book uses the tun-tap and
+# etherparse crates; this companion implements both pieces itself (chapter 1's
+# TUN device and chapter 2's header parsing are tasks of their own). Tasks run
+# in a sandbox with no route to crates.io, so cargo could not fetch a crate
+# even if we wanted one.
+
+[lib]
+name = "tcp"
+path = "src/lib.rs"
+
+[[bin]]
+name = "tcp"
+path = "src/main.rs"
+
+# --- acceptance targets: one per task, `sh ci/check.sh <task-id>` runs exactly one ---
+# id 0004-final-handshake  <->  target t0004_final_handshake  <->  acceptance/t0004_final_handshake.rs
+
+[[test]]
+name = "t0001_tun_device"
+path = "acceptance/t0001_tun_device.rs"
+
+[[test]]
+name = "t0002_parsing_the_bits"
+path = "acceptance/t0002_parsing_the_bits.rs"
+
+[[test]]
+name = "t0003_connection_quad"
+path = "acceptance/t0003_connection_quad.rs"
+
+[[test]]
+name = "t0004_final_handshake"
+path = "acceptance/t0004_final_handshake.rs"
+
+[[test]]
+name = "t0005_listening_socket"
+path = "acceptance/t0005_listening_socket.rs"

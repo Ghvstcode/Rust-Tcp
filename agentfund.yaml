@@ -1,0 +1,14 @@
+# AgentFund project descriptor. Schema: spec/schemas/agentfund.schema.json in
+# https://github.com/Ghvstcode/agentfund (spec_version 1).
+spec_version: 1
+name: rust-tcp
+description: Code companion to the book "Implementing TCP in Rust" - a user-space TCP stack in std-only Rust, one signed task per chapter, each judged by acceptance tests that run offline on packet bytes.
+repo_url: https://github.com/Ghvstcode/Rust-Tcp
+ci_provider: github
+# Donors compare this key's fingerprint with the one the server shows before approving.
+pubkey: RWSaXMSQWngDuNdWdXZMvSifzsrs6My1yL2Ej58++AwXCfk1OvgrO08z
+base_branch: main
+language: rust
+tags: [tcp, networking, rust, book, rfc793, zero-dependencies]
+# Sum of max_tokens over tasks/*.yaml (5 tasks).
+token_goal: 12000000

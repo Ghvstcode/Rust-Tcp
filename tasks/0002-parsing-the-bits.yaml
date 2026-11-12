@@ -1,0 +1,161 @@
+spec_version: 1
+id: 0002-parsing-the-bits
+title: "Chapter 2: parse and write IPv4 and TCP headers, with checksums"
+prompt: |
+  This repository is the book "Implementing TCP in Rust". The prose lives in
+  chapter1/ to chapter6/ (do not touch it). code/ is the book's code
+  companion: a Rust crate (package `tcp`, standard library only) that ends
+  where chapter 5 ends. It is built one chapter at a time by different
+  people's coding agents; this is task 0002-parsing-the-bits, chapter 2. The
+  skeleton already exists: every module is declared, every shared type is
+  defined, and every public function has its final signature and a doc
+  comment, with `todo!()` bodies. Your job is to replace the stubs named below
+  with a real implementation. You cannot ask questions: everything you need is
+  in this text, in the repository (chapter2/chapter2.md explains the why), and
+  in the acceptance test code/acceptance/t0002_parsing_the_bits.rs.
+
+  The book uses the etherparse crate for the headers. This companion parses
+  them itself. The types PacketInfo, Ipv4Header, TcpHeader and PacketError,
+  the constants, and the accessor methods the book's listings call
+  (source_addr, destination_port, syn, ...) are already in
+  `code/src/packet/mod.rs`: read it, do not change it. All multi-byte fields
+  on the wire are big-endian. You fill in three files.
+
+  code/src/packet/info.rs
+
+    PacketInfo::parse(bytes) -> Result<(PacketInfo, &[u8]), PacketError>
+      flags = u16 from bytes 0-1, proto = u16 from bytes 2-3; also returns
+      the rest of the slice, from byte 4 on. Fewer than 4 bytes:
+      Truncated { needed: 4, got: bytes.len() }.
+
+  code/src/packet/ipv4.rs
+
+    internet_checksum(data: &[u8]) -> u16
+      RFC 1071: the one's complement of the one's complement sum of the
+      16-bit words of `data`. An odd trailing byte is the HIGH byte of a last
+      word whose low byte is zero. Fold carries back in until none remain.
+      Must not overflow for any input length (accumulate in u32 or u64 and
+      fold). Empty input gives 0xffff; a header that already holds its
+      correct checksum sums to 0.
+
+    Ipv4Header::new(payload_len: u16, ttl, protocol, source, destination)
+      dscp_ecn 0, total_len = 20 + payload_len (saturating at 65535),
+      identification 0, dont_fragment true, more_fragments false,
+      fragment_offset 0, header_checksum 0, no options.
+
+    Ipv4Header::parse(bytes) -> Result<Ipv4Header, PacketError>
+      Reads only the header, like etherparse's Ipv4HeaderSlice: it does NOT
+      require bytes.len() >= total_len, and it does NOT verify the checksum.
+      Checks, in this order:
+        1. bytes.len() < 20              -> Truncated { needed: 20, got: bytes.len() }
+        2. version (high nibble of byte 0) != 4 -> NotIpv4 { version }
+        3. IHL (low nibble of byte 0) < 5 -> BadHeaderLength { value: ihl }
+        4. bytes.len() < IHL * 4         -> Truncated { needed: ihl * 4, got: bytes.len() }
+        5. total_len < IHL * 4           -> BadTotalLength { total_len, header_len: ihl * 4 }
+      Fields: byte 1 dscp_ecn; bytes 2-3 total_len; 4-5 identification;
+      6-7 hold bit 0x4000 dont_fragment, bit 0x2000 more_fragments and the
+      low 13 bits fragment_offset (bit 0x8000 is reserved and ignored); 8 ttl;
+      9 protocol; 10-11 header_checksum (as read); 12-15 source; 16-19
+      destination; bytes 20..IHL*4 are the raw options.
+
+    header_len() = 20 + options.len()
+    payload_len() = total_len - header_len(), saturating at 0
+    set_payload_len(len) -> Result<(), PacketError>
+      total_len = header_len() + len. If that would exceed 65535, return
+      Err(TooLarge { len, max: 65535 - header_len() }) and change nothing.
+    calc_header_checksum() -> u16
+      internet_checksum over the header exactly as write() emits it, but
+      with the checksum field set to zero.
+    write(w: &mut impl io::Write) -> io::Result<()>
+      Emits header_len() bytes: 0x40 | (header_len() / 4), dscp_ecn,
+      total_len, identification, the flags-and-offset word, ttl, protocol,
+      calc_header_checksum() (NOT self.header_checksum), source,
+      destination, options. Does not modify self. If options are longer than
+      40 bytes or not a multiple of 4, return an io::Error of kind
+      ErrorKind::InvalidData (wrapping PacketError::BadOptions) and write
+      nothing.
+
+  code/src/packet/tcp_header.rs
+
+    TcpHeader::new(source_port, destination_port, sequence_number, window_size)
+      Every flag false, acknowledgment_number 0, checksum 0,
+      urgent_pointer 0, no options.
+
+    TcpHeader::parse(bytes) -> Result<TcpHeader, PacketError>
+      Checks, in this order:
+        1. bytes.len() < 20 -> Truncated { needed: 20, got: bytes.len() }
+        2. data offset (high nibble of byte 12) < 5 -> BadHeaderLength { value }
+        3. bytes.len() < offset * 4 -> Truncated { needed: offset * 4, got: bytes.len() }
+      Fields: 0-1 source_port, 2-3 destination_port, 4-7 sequence_number,
+      8-11 acknowledgment_number; byte 12: low bit ns (bits 0x0e are reserved
+      and ignored); byte 13: 0x80 cwr, 0x40 ece, 0x20 urg, 0x10 ack, 0x08 psh,
+      0x04 rst, 0x02 syn, 0x01 fin; 14-15 window_size; 16-17 checksum (as
+      read); 18-19 urgent_pointer; bytes 20..offset*4 are the raw options.
+
+    header_len() = 20 + options.len()
+    calc_checksum_ipv4(ip: &Ipv4Header, payload) -> Result<u16, PacketError>
+      internet_checksum over the concatenation of: the pseudo-header
+      (ip.source, ip.destination, a zero byte, ip.protocol, then the TCP
+      length = header_len() + payload.len() as a u16); this header exactly
+      as write() emits it but with the checksum field set to zero; and the
+      payload. If the TCP length exceeds 65535, return
+      Err(TooLarge { len: <that length>, max: 65535 }).
+    write(w) -> io::Result<()>
+      Emits header_len() bytes. Byte 12 is (header_len() / 4) << 4 | ns,
+      with the reserved bits zero. The checksum field is self.checksum
+      EXACTLY as stored: the caller computes it first with
+      calc_checksum_ipv4, as the book does. Options longer than 40 bytes or
+      not a multiple of 4: ErrorKind::InvalidData, nothing written.
+
+  In both write methods, build the bytes first and call w.write_all once,
+  so a failed check writes nothing.
+
+  Chapter 3 will use these pieces to build a SYN-ACK: Ipv4Header::new, then
+  set_payload_len(tcp.header_len()), then tcp.checksum =
+  tcp.calc_checksum_ipv4(&ip, &[]), then ip.write and tcp.write into one
+  buffer. The last acceptance test does exactly that and checks the result
+  with an independent decoder.
+
+  Rules
+    - You may change ONLY the files `code/src/packet/info.rs`,
+      `code/src/packet/ipv4.rs` and `code/src/packet/tcp_header.rs`, plus the
+      marker file code/ci/done/0002-parsing-the-bits (see below). A change to
+      any other file - including the book's chapters, code/Cargo.toml,
+      code/Cargo.lock, code/src/lib.rs, code/src/main.rs, any mod.rs
+      (code/src/packet/mod.rs included), and anything under code/acceptance/
+      or code/ci/ other than your marker - makes the whole run be discarded.
+    - Standard library only: no new dependencies. There is no network
+      access; always pass `--offline` to cargo, and run it from code/
+      (`cd code`).
+    - Do not change the name, parameters or return type of any existing
+      `pub` item in your files: other tasks and the acceptance test compile
+      against them. You may add private helpers, and unit tests in a
+      `#[cfg(test)] mod tests` at the bottom of your files.
+    - No `unsafe`. No panics on any input: nothing that can fail on packet
+      data (`unwrap`, unchecked indexing, overflowing arithmetic). Check
+      lengths before you index. No `todo!()` left behind.
+    - Delete the `#![allow(unused_variables)]` line at the top of each stub
+      you implement and reword its "Stub: ..." doc lines. The code should
+      compile without warnings.
+
+  Finishing
+    1. Create the empty marker file for this task:   : > code/ci/done/0002-parsing-the-bits
+    2. Run the check that will judge your work:      sh code/ci/check.sh 0002-parsing-the-bits
+       It builds the crate, runs the unit tests, compiles every acceptance
+       target, runs code/acceptance/t0002_parsing_the_bits.rs (which you can
+       read but must not change) and re-runs the acceptance test of every
+       task merged before yours. It must end with "check.sh: OK". While
+       iterating, run just your own test from code/ with
+       `cargo test --offline --test t0002_parsing_the_bits`.
+    If the acceptance test and this text ever seem to disagree, the
+    acceptance test wins: make it pass without touching it.
+scope:
+  write:
+    - code/src/packet/info.rs
+    - code/src/packet/ipv4.rs
+    - code/src/packet/tcp_header.rs
+    - code/ci/done/0002-parsing-the-bits
+verify: sh code/ci/check.sh 0002-parsing-the-bits
+max_tokens: 2500000
+timeout_minutes: 30
+depends_on: []

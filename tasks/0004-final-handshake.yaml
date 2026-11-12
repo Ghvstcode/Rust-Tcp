@@ -1,0 +1,167 @@
+spec_version: 1
+id: 0004-final-handshake
+title: "Chapter 4: sequence numbers, write(), on_packet() and closing"
+prompt: |
+  This repository is the book "Implementing TCP in Rust". The prose lives in
+  chapter1/ to chapter6/ (do not touch it). code/ is the book's code
+  companion: a Rust crate (package `tcp`, standard library only) that ends
+  where chapter 5 ends. It is built one chapter at a time by different
+  people's coding agents; this is task 0004-final-handshake, chapter 4. The
+  skeleton already exists: every module is declared, every shared type is
+  defined, and every public function has its final signature and a doc
+  comment, with `todo!()` bodies. Your job is to replace the stubs named below
+  with a real implementation. You cannot ask questions: everything you need is
+  in this text, in the repository (chapter4/chapter4.md has the listings this
+  follows; chapter5/chapter5.md "No More Hanging Up" has one change to them),
+  and in the acceptance test code/acceptance/t0004_final_handshake.rs.
+
+  Read code/src/tcp/mod.rs (State, SendSequenceSpace, RecvSequenceSpace and
+  Connection; every field is pub) and code/src/packet/mod.rs. The chapter 2
+  packet code is merged and working (Ipv4Header::set_payload_len / header_len
+  / write, TcpHeader::header_len / calc_checksum_ipv4 / write). The `Nic`
+  trait is in code/src/lib.rs. All sequence arithmetic is modulo 2^32: use
+  wrapping_add / wrapping_sub everywhere, never + or - on sequence numbers.
+  The tests build Connections field by field, so do not rely on anything
+  `accept` (another task) would have done.
+
+  code/src/tcp/seq.rs
+
+    wrapping_lt(lhs: u32, rhs: u32) -> bool
+      lhs.wrapping_sub(rhs) > (1 << 31)   (RFC 1323; strictly greater: at
+      exactly half way round, neither comes first)
+    is_between_wrapped(start, x, end) -> bool
+      wrapping_lt(start, x) && wrapping_lt(x, end)   (both bounds exclusive)
+
+  code/src/tcp/write.rs
+
+    Connection::write(&mut self, nic: &mut dyn Nic, seq: u32, limit: usize)
+      -> io::Result<usize>
+    Builds and sends ONE segment (one nic.send call) from self.ip and
+    self.tcp, carrying up to `limit` bytes from self.unacked. Returns the
+    number of payload bytes sent. In order:
+      1. self.tcp.sequence_number = seq;
+         self.tcp.acknowledgment_number = self.recv.nxt.
+      2. offset = seq.wrapping_sub(self.send.una) as usize. If
+         self.closed_at == Some(c) and seq == c.wrapping_add(1), set offset
+         and limit to 0 (nothing is sent after our FIN).
+      3. The payload is self.unacked from `offset` on (it is a VecDeque: use
+         both halves of as_slices(), in order), at most `limit` bytes, and at
+         most 1500 - ip.header_len() - tcp.header_len() bytes (1460 with no
+         options). If offset is at or past the end of unacked, the payload is
+         empty: never panic.
+      4. ip.set_payload_len(tcp.header_len() + payload.len()); tcp.checksum =
+         tcp.calc_checksum_ipv4(&ip, payload); write the IPv4 header, the
+         TCP header and the payload into one buffer; nic.send it.
+      5. next = seq + payload length; if tcp.syn { next += 1; tcp.syn =
+         false }; if tcp.fin { next += 1; tcp.fin = false } (SYN and FIN
+         consume a sequence number and are sent once); if
+         wrapping_lt(send.nxt, next) { send.nxt = next } (send.nxt never
+         moves backwards, so a retransmission does not rewind it).
+    write never removes bytes from unacked (that happens when an ACK
+    arrives, in chapter 6). The book also records send times for a timer;
+    leave that out (there is no field for it).
+
+  code/src/tcp/on_packet.rs
+
+    Connection::on_packet(&mut self, nic: &mut dyn Nic, iph: &Ipv4Header,
+                          tcph: &TcpHeader, data: &[u8]) -> io::Result<()>
+    The chapter 4 listing, with chapter 5's change. In order:
+      1. seqn = tcph.sequence_number; slen = data.len() + 1 if fin + 1 if
+         syn; wend = recv.nxt + recv.wnd.
+      2. Acceptable? If slen == 0: when recv.wnd == 0, only seqn ==
+         recv.nxt; otherwise is_between_wrapped(recv.nxt - 1, seqn, wend).
+         If slen > 0: when recv.wnd == 0, never; otherwise
+         is_between_wrapped(recv.nxt - 1, seqn, wend) OR
+         is_between_wrapped(recv.nxt - 1, seqn + slen - 1, wend).
+      3. Not acceptable: send an empty ACK with self.write(nic, send.nxt, 0)
+         and return Ok(()). Nothing else changes.
+      4. recv.nxt = seqn + slen.
+      5. If tcph.ack is false: return Ok(()).
+      6. ackn = tcph.acknowledgment_number. In SynRcvd: if
+         is_between_wrapped(send.una - 1, ackn, send.nxt + 1), state = Estab
+         (and fall through to step 7 with the new state). Otherwise stay in
+         SynRcvd (RFC 793 wants a reset here: a loose end, do not add it).
+      7. In Estab, FinWait1 or FinWait2: if NOT is_between_wrapped(send.una,
+         ackn, send.nxt + 1), return Ok(()) (the ACK is not new). Otherwise
+         send.una = ackn. Do NOT keep the book's assert!(data.is_empty()):
+         the payload is simply ignored until chapter 6. Do NOT send a FIN
+         here: chapter 5 deletes that block ("No More Hanging Up"); it lives
+         on as close(), below.
+      8. In FinWait1: if send.una == send.iss + 2, state = FinWait2.
+      9. If tcph.fin and the state is FinWait2: self.write(nic, send.nxt, 0)
+         (the ACK of their FIN), then state = TimeWait.
+    Errors from write are returned with `?`.
+
+    is_established(&self) -> bool       state == State::Estab, nothing else.
+
+    close(&mut self, nic) -> io::Result<()>
+      In Estab: closed_at = Some(send.una + unacked.len()) (the sequence
+      number our FIN will have); tcp.fin = true; self.write(nic, send.nxt, 0);
+      state = FinWait1. In any other state: do nothing and return Ok(())
+      (not tested; later chapters extend it).
+
+    send_rst(&mut self, nic) -> io::Result<()>
+      Send one segment with the RST flag set: set tcp.rst = true, call
+      self.write(nic, send.nxt, 0), then set tcp.rst = false again so later
+      segments do not carry it. Which sequence and acknowledgment numbers a
+      reset should carry is a loose end in the book; the test only checks
+      that exactly one segment with RST goes out.
+
+  The acceptance test replays the book's chapter 4 capture: the client's
+  ACK moves SynRcvd to Estab and sends nothing; close() sends FIN,ACK
+  Seq=iss+1 and moves to FinWait1; the client's FIN,ACK acknowledging our
+  FIN moves us through FinWait2 and we answer with a plain ACK and enter
+  TimeWait.
+
+  Deliberately NOT tested (loose ends later chapters change; do what the
+  text above says and nothing more): a FIN received in Estab, a FIN whose
+  ACK number is not new (the chapter 4 Aside), what happens after TimeWait,
+  whether data segments are acknowledged, and close in states other than
+  Estab.
+
+  Rules
+    - You may change ONLY the files `code/src/tcp/seq.rs`,
+      `code/src/tcp/write.rs` and `code/src/tcp/on_packet.rs`, plus the
+      marker file code/ci/done/0004-final-handshake (see below). A change to
+      any other file - including the book's chapters, code/Cargo.toml,
+      code/Cargo.lock, code/src/lib.rs, code/src/main.rs, any mod.rs
+      (code/src/tcp/mod.rs included), code/src/tcp/accept.rs, and anything
+      under code/acceptance/ or code/ci/ other than your marker - makes the
+      whole run be discarded.
+    - Standard library only: no new dependencies. There is no network
+      access; always pass `--offline` to cargo, and run it from code/
+      (`cd code`).
+    - Do not change the name, parameters or return type of any existing
+      `pub` item in your files: other tasks and the acceptance test compile
+      against them. You may add private helpers, and unit tests in a
+      `#[cfg(test)] mod tests` at the bottom of your files.
+    - No `unsafe`. No panics on any input: no `unwrap` on anything that can
+      fail, no unchecked slicing of unacked, no overflowing arithmetic. No
+      `todo!()` left behind.
+    - Delete the `#![allow(unused_variables)]` line at the top of each stub
+      you implement and reword its "Stub: ..." doc lines. The code should
+      compile without warnings (prefix a deliberately unused parameter, such
+      as `iph`, with `_`).
+
+  Finishing
+    1. Create the empty marker file for this task:   : > code/ci/done/0004-final-handshake
+    2. Run the check that will judge your work:      sh code/ci/check.sh 0004-final-handshake
+       It builds the crate, runs the unit tests, compiles every acceptance
+       target, runs code/acceptance/t0004_final_handshake.rs (which you can
+       read but must not change) and re-runs the acceptance test of every
+       task merged before yours. It must end with "check.sh: OK". While
+       iterating, run just your own test from code/ with
+       `cargo test --offline --test t0004_final_handshake`.
+    If the acceptance test and this text ever seem to disagree, the
+    acceptance test wins: make it pass without touching it.
+scope:
+  write:
+    - code/src/tcp/seq.rs
+    - code/src/tcp/write.rs
+    - code/src/tcp/on_packet.rs
+    - code/ci/done/0004-final-handshake
+verify: sh code/ci/check.sh 0004-final-handshake
+max_tokens: 3500000
+timeout_minutes: 40
+depends_on:
+  - 0002-parsing-the-bits

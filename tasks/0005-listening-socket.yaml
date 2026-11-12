@@ -1,0 +1,135 @@
+spec_version: 1
+id: 0005-listening-socket
+title: "Chapter 5: Interface, TcpListener and TcpStream over a packet-loop thread"
+prompt: |
+  This repository is the book "Implementing TCP in Rust". The prose lives in
+  chapter1/ to chapter6/ (do not touch it). code/ is the book's code
+  companion: a Rust crate (package `tcp`, standard library only) that ends
+  where chapter 5 ends. It is built one chapter at a time by different
+  people's coding agents; this is task 0005-listening-socket, chapter 5. The
+  skeleton already exists: every module is declared, every shared type is
+  defined, and every public function has its final signature and a doc
+  comment, with `todo!()` bodies. Your job is to replace the stubs named below
+  with a real implementation. You cannot ask questions: everything you need is
+  in this text, in the repository (chapter5/chapter5.md has the listings this
+  follows almost line for line), and in the acceptance test
+  code/acceptance/t0005_listening_socket.rs.
+
+  Implement chapter 5 in `code/src/interface.rs`. Everything chapters 2 to 4
+  need is merged and working: Ipv4Header::parse / header_len and
+  TcpHeader::parse / header_len (code/src/packet/), Connection::accept,
+  Connection::on_packet and Connection::is_established (code/src/tcp/). The
+  differences from the book's listings: headers are parsed with the crate's
+  own `Ipv4Header::parse(&buf[..nbytes])` and
+  `TcpHeader::parse(&buf[iph.header_len()..nbytes])` instead of etherparse
+  slices (data starts at iph.header_len() + tcph.header_len()), Connection
+  methods take `&mut dyn Nic` and `&iph` / `&tcph` by reference, and the
+  packet loop runs on any `Nic` (code/src/lib.rs), not only a TUN device.
+  The public signatures in the file are the contract. The private items
+  (ConnectionTable, Shared, the struct fields) are the book's; you may change
+  them.
+
+    Interface::with_nic<N: Nic + Send + 'static>(nic: N) -> Interface
+      Create the shared state (Arc<Shared>), move `nic` into a new thread
+      running the packet loop, return straight away. If the loop returns an
+      error, log it with eprintln! (nobody is waiting for it).
+    Interface::new() -> io::Result<Interface>
+      tun::Iface::without_packet_info("tun0", tun::Mode::Tun)?, then
+      with_nic. Not tested (it needs a TUN device); it only has to compile.
+    Drop for Interface: set table.shutting_down = true.
+
+    The packet loop (a private fn): a 1504-byte buffer; forever:
+      nbytes = nic.recv(&mut buf)?  (an error ends the loop: that is how the
+      tests shut it down). Parse the IPv4 header; on error, or if
+      iph.protocol() != PROTO_TCP, skip the datagram (continue). Parse the TCP
+      header; on error skip. quad = Quad { src: (iph.source_addr(),
+      tcph.source_port()), dst: (iph.destination_addr(),
+      tcph.destination_port()) }. Only then take the lock. If
+      shutting_down, return Ok(()). Then:
+        - Occupied entry: was = is_established(); on_packet(...)?; if it was
+          not established and now is, push the quad onto the back of that
+          port's backlog (if the port still has a listener) and
+          new_connection.notify_all().
+        - Vacant entry: only if someone listens on the destination port,
+          call Connection::accept(...)? and insert the connection it
+          returns, if any. Otherwise do nothing.
+      Garbage (empty, truncated, IPv6, UDP, a bad TCP data offset) must
+      never stop the loop.
+
+    Interface::bind(&self, port) -> io::Result<TcpListener>
+      Under the lock: if the port already has a listener, return an
+      io::Error of kind ErrorKind::AddrInUse. Otherwise insert an empty
+      backlog for it. Many ports can be bound from one Interface.
+
+    TcpListener::accept(&self) -> io::Result<(TcpStream, SocketAddrV4)>
+      Under the lock, loop: pop_front from this port's backlog (first in,
+      first out); if there is one, return the TcpStream for that quad and
+      the peer address SocketAddrV4::new(quad.src.0, quad.src.1). Otherwise
+      wait on new_connection (Condvar::wait releases the lock while
+      sleeping) and check again; wakeups can be spurious or meant for
+      another port. A connection is handed over only once its handshake is
+      complete (the client's ACK arrived), never at SynRcvd. If this port's
+      backlog is missing from the table, return an io::Error (any kind)
+      instead of the book's expect().
+    Drop for TcpListener: remove its port from listeners (unbind; binding it
+      again then succeeds).
+
+    TcpStream::peer_addr() -> SocketAddrV4    quad.src
+    TcpStream::local_addr() -> SocketAddrV4   quad.dst
+    Drop for TcpStream: leave it as it is in the skeleton (does nothing; a
+      FIN on drop is chapter 6).
+
+  Interface, TcpListener and TcpStream must be Send (the book moves
+  listeners into threads). Locking with `.lock().unwrap()` as the book does
+  is acceptable; recovering from a poisoned lock with
+  `.unwrap_or_else(|e| e.into_inner())` is better.
+
+  Deliberately NOT tested (loose ends the book leaves for later; do what
+  the text above says and nothing more): any reply to a SYN for a port
+  nobody listens on (today nothing is sent; a RST comes later), what happens
+  to connections in a backlog when their listener is dropped, what dropping
+  a stream or the interface sends, and how quickly the loop notices
+  shutting_down.
+
+  Rules
+    - You may change ONLY the file `code/src/interface.rs`, plus the marker
+      file code/ci/done/0005-listening-socket (see below). A change to any
+      other file - including the book's chapters, code/Cargo.toml,
+      code/Cargo.lock, code/src/lib.rs, code/src/main.rs, any mod.rs, any
+      file under code/src/tcp/ or code/src/packet/, and anything under
+      code/acceptance/ or code/ci/ other than your marker - makes the whole
+      run be discarded.
+    - Standard library only: no new dependencies. There is no network
+      access; always pass `--offline` to cargo, and run it from code/
+      (`cd code`).
+    - Do not change the name, parameters or return type of any existing
+      `pub` item in your file: main.rs and the acceptance test compile
+      against them. You may add private helpers, and unit tests in a
+      `#[cfg(test)] mod tests` at the bottom of your file.
+    - No `unsafe`. No panics on any input a peer can send. No `todo!()`
+      left behind.
+    - Delete the `#![allow(...)]` line at the top of the stub and reword its
+      "Stub: ..." doc lines. The code should compile without warnings.
+
+  Finishing
+    1. Create the empty marker file for this task:   : > code/ci/done/0005-listening-socket
+    2. Run the check that will judge your work:      sh code/ci/check.sh 0005-listening-socket
+       It builds the crate, runs the unit tests, compiles every acceptance
+       target, runs code/acceptance/t0005_listening_socket.rs (which you
+       can read but must not change) and re-runs the acceptance test of
+       every task merged before yours. It must end with "check.sh: OK".
+       While iterating, run just your own test from code/ with
+       `cargo test --offline --test t0005_listening_socket`. Every wait in
+       that test has a 5-second deadline, so a hang shows up as a failure.
+    If the acceptance test and this text ever seem to disagree, the
+    acceptance test wins: make it pass without touching it.
+scope:
+  write:
+    - code/src/interface.rs
+    - code/ci/done/0005-listening-socket
+verify: sh code/ci/check.sh 0005-listening-socket
+max_tokens: 3000000
+timeout_minutes: 40
+depends_on:
+  - 0003-connection-quad
+  - 0004-final-handshake

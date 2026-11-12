@@ -1,0 +1,109 @@
+spec_version: 1
+id: 0001-tun-device
+title: "Chapter 1: a TUN device with nothing but the standard library"
+prompt: |
+  This repository is the book "Implementing TCP in Rust". The prose lives in
+  chapter1/ to chapter6/ (do not touch it). code/ is the book's code
+  companion: a Rust crate (package `tcp`, standard library only) that ends
+  where chapter 5 ends. It is built one chapter at a time by different
+  people's coding agents; this is task 0001-tun-device, chapter 1. The
+  skeleton already exists: every module is declared, every shared type is
+  defined, and every public function has its final signature and a doc
+  comment, with `todo!()` bodies. Your job is to replace the stubs named below
+  with a real implementation. You cannot ask questions: everything you need is
+  in this text, in the repository (chapter1/chapter1.md explains the why), and
+  in the acceptance test code/acceptance/t0001_tun_device.rs.
+
+  Implement chapter 1's TUN device in `code/src/tun.rs`. The book uses the
+  `tun-tap` crate; underneath, that crate opens /dev/net/tun and makes one
+  ioctl(TUNSETIFF) call with a `struct ifreq`. You do the same with std only.
+  The constants at the top of the file are already defined; do not change
+  them: TUNSETIFF = 0x4004_54ca, IFF_TUN = 0x0001, IFF_TAP = 0x0002,
+  IFF_NO_PI = 0x1000, IFNAMSIZ = 16, IFREQ_LEN = 40.
+
+  Functions
+
+    ifreq(name: &str, mode: Mode, packet_info: bool) -> io::Result<[u8; 40]>
+      The `struct ifreq` for TUNSETIFF on 64-bit Linux. Bytes 0..16 hold the
+      interface name, NUL-padded. Bytes 16..18 hold ifr_flags as an i16 in
+      NATIVE byte order (`to_ne_bytes`). Every other byte is zero. The flags
+      are IFF_TUN for Mode::Tun and IFF_TAP for Mode::Tap, plus IFF_NO_PI when
+      `packet_info` is false.
+      The name is at most 15 BYTES (not characters; the 16th byte is the
+      terminating NUL) and contains no NUL byte. Otherwise return an
+      io::Error of kind ErrorKind::InvalidInput. The empty name is allowed
+      (the kernel then picks one), and so are kernel templates like "tun%d".
+
+    ifreq_name(ifr: &[u8; 40]) -> io::Result<String>
+      The bytes of ifr[0..16] up to the first NUL, as a String. Bytes after
+      the first NUL are ignored. ErrorKind::InvalidData when there is no NUL
+      in those 16 bytes, or when the bytes are not valid UTF-8.
+
+    Iface::new(name, mode)                  open WITH packet information
+    Iface::without_packet_info(name, mode)  open with IFF_NO_PI (what the
+                                            book uses from chapter 3 on)
+      Both first build the ifreq, so an invalid name is InvalidInput on every
+      operating system, before any file is opened.
+      On Linux (`#[cfg(target_os = "linux")]`): open /dev/net/tun for reading
+      and writing, call ioctl(fd, TUNSETIFF, ifr.as_mut_ptr()), return
+      `io::Error::last_os_error()` if it returns a negative value, and keep
+      the name the kernel wrote back into the ifreq (via ifreq_name).
+      On every other OS (`#[cfg(not(target_os = "linux"))]`): return an
+      io::Error of kind ErrorKind::Unsupported.
+      Declare ioctl yourself; std already links libc on Linux, so no crate is
+      needed:   extern "C" { fn ioctl(fd: i32, request: u64, ...) -> i32; }
+      Get the fd with std::os::unix::io::AsRawFd.
+
+    name(&self) -> &str     the name the kernel used ("tun%d" becomes "tun0")
+    recv(&self, buf)        one read from the device file: one datagram
+    send(&self, buf)        one write to the device file: one datagram
+      They take &self, so read and write through `&self.file`
+      (`(&self.file).read(buf)`). The private fields of `Iface` are yours to
+      change. The `impl Nic for Iface` at the bottom of the file already
+      forwards to recv/send: keep it.
+
+  Testing. Neither CI nor the task sandbox has a TUN device or
+  cap_net_admin. The acceptance test covers ifreq, ifreq_name, name
+  validation in new/without_packet_info, and ErrorKind::Unsupported on
+  non-Linux systems. The Linux branch is only compiled, so make sure it
+  compiles: CI and the sandbox both run Linux.
+
+  Rules
+    - You may change ONLY the file `code/src/tun.rs`, plus the marker file
+      code/ci/done/0001-tun-device (see below). A change to any other file -
+      including the book's chapters, code/Cargo.toml, code/Cargo.lock,
+      code/src/lib.rs, code/src/main.rs, any mod.rs, and anything under
+      code/acceptance/ or code/ci/ other than your marker - makes the whole
+      run be discarded.
+    - Standard library only: no new dependencies. There is no network
+      access; always pass `--offline` to cargo, and run it from code/
+      (`cd code`).
+    - Do not change the name, parameters or return type of any existing
+      `pub` item in your file: other tasks and the acceptance test compile
+      against them. You may add private helpers, and unit tests in a
+      `#[cfg(test)] mod tests` at the bottom of your file.
+    - The ONLY `unsafe` allowed is one block around the ioctl call, with a
+      `// SAFETY:` comment. No panics on any input: no `unwrap` or unchecked
+      indexing on anything that can fail. No `todo!()` left behind.
+    - Delete the `#![allow(...)]` line at the top of the stub and reword its
+      "Stub: ..." doc lines. The code should compile without warnings.
+
+  Finishing
+    1. Create the empty marker file for this task:   : > code/ci/done/0001-tun-device
+    2. Run the check that will judge your work:      sh code/ci/check.sh 0001-tun-device
+       It builds the crate, runs the unit tests, compiles every acceptance
+       target, runs code/acceptance/t0001_tun_device.rs (which you can read
+       but must not change) and re-runs the acceptance test of every task
+       merged before yours. It must end with "check.sh: OK". While
+       iterating, run just your own test from code/ with
+       `cargo test --offline --test t0001_tun_device`.
+    If the acceptance test and this text ever seem to disagree, the
+    acceptance test wins: make it pass without touching it.
+scope:
+  write:
+    - code/src/tun.rs
+    - code/ci/done/0001-tun-device
+verify: sh code/ci/check.sh 0001-tun-device
+max_tokens: 1500000
+timeout_minutes: 20
+depends_on: []

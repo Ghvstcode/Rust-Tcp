@@ -94,7 +94,7 @@ sh code/ci/check.sh                       # the skeleton still builds, old tasks
                                           # ^ must FAIL: a task that passes before it is done is not a task
 sh code/ci/scope-audit.sh collisions      # no two open tasks share a file
 agentfund validate --strict tasks/
-agentfund sign tasks/ --key ~/.config/agentfund/keys/rust-tcp.key
+agentfund sign tasks/ --key ~/.config/agentfund/keys/rust-tcp-2.key
 git add tasks/ code/ && git commit -m "tasks: ..."
 ```
 

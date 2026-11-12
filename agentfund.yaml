@@ -6,7 +6,7 @@ description: Code companion to the book "Implementing TCP in Rust" - a user-spac
 repo_url: https://github.com/Ghvstcode/Rust-Tcp
 ci_provider: github
 # Donors compare this key's fingerprint with the one the server shows before approving.
-pubkey: RWSaXMSQWngDuNdWdXZMvSifzsrs6My1yL2Ej58++AwXCfk1OvgrO08z
+pubkey: RWSsS5FV36WFKiRcXoeakQvMThdBxo994OOLmUNIShsqfShwruvv49aW
 base_branch: main
 language: rust
 tags: [tcp, networking, rust, book, rfc793, zero-dependencies]

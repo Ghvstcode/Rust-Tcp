@@ -57,7 +57,7 @@ agentfund work rust-tcp --once --budget 4m            # one task, at most 4M tok
 ```
 
 `approve` prints the maintainer key's fingerprint. It must be
-`SHA256:921bde08b8ad1e4efe621d8b86cfc837ba93c1c9ffb1d0ee6c9e031269ffd955`.
+`SHA256:a820c2f49caddbea47eb456ff1410dce6d2de9e4e4a51d39f23167229f801f0d`.
 `approve` also prints every prompt your agent would be given. Nothing from this
 repository runs on your machine outside the sandbox.
 

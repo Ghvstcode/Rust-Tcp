@@ -28,5 +28,11 @@
       "sha256": "9d37eda61e02b7aa5c1202b8bfdee498465930a7eb8f0b030c8660d5d29a9a5f"
     }
   ],
-  "rotations": []
+  "rotations": [
+    {
+      "from": "RWSaXMSQWngDuNdWdXZMvSifzsrs6My1yL2Ej58++AwXCfk1OvgrO08z",
+      "to": "RWSsS5FV36WFKiRcXoeakQvMThdBxo994OOLmUNIShsqfShwruvv49aW",
+      "signature": "untrusted comment: agentfund key rotation\nRUSaXMSQWngDuAIbXZy4qlp1dyiIfIo8IQfrJIBUCYcpbPx/6pBdZaNeTmrxnwTejntWo7BFgNG6g5Fpskp6rG5jPVpQ8Kn7KAA=\ntrusted comment: agentfund rotation v1 key:B803785A90C45C9A\nnhmtmzMd1C8MjYJvwBrMrn8L6qj80bioBPUUcfVG1zcE0wTBZ3HfQ4IWzM4ZwJgPFwYbwM2S+KuRpQpq956FCw==\n"
+    }
+  ]
 }
